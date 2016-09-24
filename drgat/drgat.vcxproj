@@ -67,20 +67,20 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\b64encode.h" />
-    <ClInclude Include="..\stdafx.h" />
-    <ClInclude Include="..\targetver.h" />
-    <ClInclude Include="..\traceclient.h" />
-    <ClInclude Include="..\tracestructs.h" />
-    <ClInclude Include="..\utilities.h" />
-    <ClInclude Include="..\windowstrace.h" />
-    <ClInclude Include="..\wrapcryptsp.h" />
-    <ClInclude Include="..\wrapkernel32.h" />
-    <ClInclude Include="..\wrapucrtbase.h" />
-    <ClInclude Include="..\wrapuser32.h" />
-    <ClInclude Include="..\wrapadvapi32.h" />
-    <ClInclude Include="..\wrapntdll.h" />
-    <ClInclude Include="..\wrapwininet.h" />
+    <ClInclude Include="..\headers\b64encode.h" />
+    <ClInclude Include="..\headers\stdafx.h" />
+    <ClInclude Include="..\headers\targetver.h" />
+    <ClInclude Include="..\headers\traceclient.h" />
+    <ClInclude Include="..\headers\tracestructs.h" />
+    <ClInclude Include="..\headers\utilities.h" />
+    <ClInclude Include="..\headers\windowstrace.h" />
+    <ClInclude Include="..\headers\wrapcryptsp.h" />
+    <ClInclude Include="..\headers\wrapkernel32.h" />
+    <ClInclude Include="..\headers\wrapucrtbase.h" />
+    <ClInclude Include="..\headers\wrapuser32.h" />
+    <ClInclude Include="..\headers\wrapadvapi32.h" />
+    <ClInclude Include="..\headers\wrapntdll.h" />
+    <ClInclude Include="..\headers\wrapwininet.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\b64encode.cpp" />

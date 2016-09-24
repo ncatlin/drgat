@@ -1,5 +1,5 @@
-#include "wrapuser32.h"
-#include "utilities.h"
+#include "headers\wrapuser32.h"
+#include "headers\utilities.h"
 
 static void wrapCryptcreatehash(void *wrapcxt, OUT void **user_data)
 {

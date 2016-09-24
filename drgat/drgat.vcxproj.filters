@@ -15,46 +15,46 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\wrapuser32.h">
+    <ClInclude Include="..\headers\b64encode.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\b64encode.h">
+    <ClInclude Include="..\headers\stdafx.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\stdafx.h">
+    <ClInclude Include="..\headers\targetver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\targetver.h">
+    <ClInclude Include="..\headers\traceclient.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\traceclient.h">
+    <ClInclude Include="..\headers\tracestructs.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\tracestructs.h">
+    <ClInclude Include="..\headers\utilities.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\utilities.h">
+    <ClInclude Include="..\headers\windowstrace.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\windowstrace.h">
+    <ClInclude Include="..\headers\wrapadvapi32.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\wrapkernel32.h">
+    <ClInclude Include="..\headers\wrapcryptsp.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\wrapadvapi32.h">
+    <ClInclude Include="..\headers\wrapkernel32.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\wrapntdll.h">
+    <ClInclude Include="..\headers\wrapntdll.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\wrapucrtbase.h">
+    <ClInclude Include="..\headers\wrapucrtbase.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\wrapcryptsp.h">
+    <ClInclude Include="..\headers\wrapuser32.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\wrapwininet.h">
+    <ClInclude Include="..\headers\wrapwininet.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

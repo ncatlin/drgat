@@ -1,6 +1,6 @@
-#include "stdafx.h"
-#include "utilities.h"
-#include "b64encode.h"
+#include "headers\stdafx.h"
+#include "headers\utilities.h"
+#include "headers\b64encode.h"
 
 bool symCB(const char *name, size_t modoffs, callback_data *cbd)
 {
@@ -62,8 +62,6 @@ void *logged_memalloc(size_t size)
 
 }
 
-
-
 //http://stackoverflow.com/questions/5820810/case-insensitive-string-comp-in-c
 //this client might need unicode...
 int strcicmp(char const *a, char const *b)
@@ -74,7 +72,6 @@ int strcicmp(char const *a, char const *b)
 			return d;
 	}
 }
-
 
 void printTagCache(THREAD_STATE *thread)
 {

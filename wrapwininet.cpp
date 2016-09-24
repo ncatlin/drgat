@@ -1,5 +1,5 @@
-#include "wrapwininet.h"
-#include "utilities.h"
+#include "headers\wrapwininet.h"
+#include "headers\utilities.h"
 
 static void wrapInternetConnectW(void *wrapcxt, OUT void **user_data)
 {
@@ -20,11 +20,11 @@ static void wrapHTTPOpenReqW(void *wrapcxt, OUT void **user_data)
 	LPCWSTR objname = (LPCWSTR)drwrap_get_arg(wrapcxt, 2);
 
 	if (!verb) 
-		dr_fprintf(thread->f, "ARG,%d,%x,%x,M,0,GET@", 1, drwrap_get_func(wrapcxt), thread->sourceInstruction);
+		dr_fprintf(thread->f, "ARG,%d,%x,%x,M,0,%s@", 1, drwrap_get_func(wrapcxt), thread->sourceInstruction, "GET");
 	else
 	{
 		b64_wstring_arg(verb, thread->stringbuf);
-		dr_fprintf(thread->f, "ARG,%d,%x,%x,M,1,%s@", 1, drwrap_get_func(wrapcxt), thread->sourceInstruction, verb);
+		dr_fprintf(thread->f, "ARG,%d,%x,%x,M,1,%s@", 1, drwrap_get_func(wrapcxt), thread->sourceInstruction, thread->stringbuf);
 	}
 
 	b64_wstring_arg(objname, thread->stringbuf);

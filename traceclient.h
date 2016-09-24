@@ -1,10 +1,8 @@
-#include "stdafx.h"
-#include "targetver.h"
-#include "tracestructs.h"
 #pragma once
 
-
-
+#include "headers\stdafx.h"
+#include "headers\targetver.h"
+#include "headers\tracestructs.h"
 
 //if a call blocks it could be in middle of a tag cache
 //if we want to see the red line waiting on it during runtime we have to dump the cache

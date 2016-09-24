@@ -1,5 +1,5 @@
-#include "wrapucrtbase.h"
-#include "utilities.h"
+#include "headers\wrapucrtbase.h"
+#include "headers\utilities.h"
 
 static void wrapWcscpy(void *wrapcxt, OUT void **user_data)
 {

@@ -1,5 +1,5 @@
-#include "wrapadvapi32.h"
-#include "utilities.h"
+#include "headers\wrapadvapi32.h"
+#include "headers\utilities.h"
 
 void wrapRegQValExA(void *wrapcxt, OUT void **user_data)
 {

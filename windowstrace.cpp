@@ -1,14 +1,14 @@
-#include "windowstrace.h"
-#include "utilities.h"
-#include "b64encode.h"
+#include "headers\windowstrace.h"
+#include "headers\utilities.h"
+#include "headers\b64encode.h"
 
-#include "wrapkernel32.h"
-#include "wrapuser32.h"
-#include "wrapadvapi32.h"
-#include "wrapntdll.h"
-#include "wrapucrtbase.h"
-#include "wrapcryptsp.h"
-#include "wrapwininet.h"
+#include "headers\wrapkernel32.h"
+#include "headers\wrapuser32.h"
+#include "headers\wrapadvapi32.h"
+#include "headers\wrapntdll.h"
+#include "headers\wrapucrtbase.h"
+#include "headers\wrapcryptsp.h"
+#include "headers\wrapwininet.h"
 
 void windows_event_module_load(void *drcontext, const module_data_t *info, bool loaded)
 {
@@ -61,23 +61,11 @@ void windows_event_module_load(void *drcontext, const module_data_t *info, bool 
 	else if (path == "c:\\windows\\system32\\ucrtbase.dll" || path == "c:\\windows\\system32\\ucrtbased.dll")
 		wrap_ucrtbase(info->handle);
 
-	//todo add kernbase?, any other interesting modules
-
-#if defined _WIN64
-	traceClientptr->write_sync_mod("mn@%s@%d@%x@%x@%x", info->full_path, modindex, info->start, info->end, !includedModules[modindex]);
-#elif defined _WIN32
 	traceClientptr->write_sync_mod("mn@%s@%d@%lx@%lx@%x", info->full_path, modindex,
 		info->start, info->end, !traceClientptr->includedModules[modindex]);
-#endif
 
 	start_sym_processing(modindex, info->full_path);
-
-	
 }
-
-
-
-
 
 
 /*

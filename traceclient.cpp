@@ -4,6 +4,9 @@ Every instruction of target (internal) code, in order
 The first address of non-target (external) code
 Need to record target of every jump in case it hits external + can check conditional completion offline
 */
+#include "headers\windowstrace.h"
+#include "headers\traceclient.h"
+#include "headers\utilities.h"
 
 
 #define _WIN32
@@ -13,13 +16,6 @@ Need to record target of every jump in case it hits external + can check conditi
 #define WINVER _WIN32_WINNT_WIN7  
 #define NTDDI_VERSION _WIN32_WINNT_WIN7  
 
-
-#include "targetver.h"
-#include "windowstrace.h"
-#include "traceclient.h"
-#include "tracestructs.h"
-#include "utilities.h"
-#include "stdafx.h"
 
 //todo: sort crash if target buffer full (ie: paused w/debugger)
 //#define VERBOSE_VERBOSE
@@ -164,7 +160,7 @@ basic loop compression happens here
 if not in a loop and we jump back, we are setting cache[0] to start of loop
 next iteration we notice the target is cache[0] and start loop increments
 */
-inline void process_block(app_pc pc, app_pc target, userd *block_data)
+inline void process_block(app_pc pc, app_pc target, BLOCKDATA *block_data)
 {
 	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
 	thread->sourceInstruction = pc;
@@ -273,7 +269,7 @@ inline void process_block(app_pc pc, app_pc target, userd *block_data)
 
 static void at_cbr(app_pc pc, app_pc target, int taken)
 {
-	userd *block_data = (userd *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
+	BLOCKDATA *block_data = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
 
 	#ifdef VERBOSE_VERBOSE
 	dr_printf("at_cbr pc%lx targ %lx bb%lx falladdr:%lx taken:%d\n",pc,target,block_data->appc,block_data->fallthrough,taken);
@@ -542,10 +538,11 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 			break;
 		}
 
+		//this is near enough untested and i make no guarantees about its robustness
+		//external libraries creating code outside the initial ranges will probably cause huge problems
 		if (mno >= traceClientptr->numMods)
 		{	
 			//failed to find. self modifying code?
-			//may be good idea to make this instrumented = true
 			printTagCache(thread);
 			dr_mem_info_t meminfo;
 			dr_query_memory_ex(firstiPC, &meminfo);

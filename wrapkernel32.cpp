@@ -1,5 +1,5 @@
-#include "wrapkernel32.h"
-#include "utilities.h"
+#include "headers\wrapkernel32.h"
+#include "headers\utilities.h"
 
 static void wrapWritefile(void *wrapcxt, OUT void **user_data)
 {
