@@ -6,17 +6,15 @@ Need to record target of every jump in case it hits external + can check conditi
 */
 
 
-
 #define _WIN32
 //I tried to compile this using VS2015 but no matter what options or defines I used 
 //it wouldn't run on windows 10 these are a monument to my failure
 #define _WIN32_WINNT _WIN32_WINNT_WIN7  
 #define WINVER _WIN32_WINNT_WIN7  
 #define NTDDI_VERSION _WIN32_WINNT_WIN7  
+
+
 #include "targetver.h"
-
-
-
 #include "windowstrace.h"
 #include "traceclient.h"
 #include "tracestructs.h"
@@ -24,12 +22,7 @@ Need to record target of every jump in case it hits external + can check conditi
 #include "stdafx.h"
 
 //todo: sort crash if target buffer full (ie: paused w/debugger)
-
 //#define VERBOSE_VERBOSE
-
-//todo: memset as well as the other interesting ones
-
-TRACECLIENT *traceClientptr;
 
 static void event_thread_init(void *drcontext);
 static void event_thread_exit(void *drcontext);
@@ -45,14 +38,11 @@ static dr_emit_flags_t event_app_instruction(void *drcontext, void *tag,
 	void *user_data);
 
 #define MAXTHREADID 65000
-
-bool threadInInstrumentedArr[MAXTHREADID];
-uint threadModArr[MAXTHREADID];
-
 #define MAXDISLEN 4096 
-char lineStr[MAXDISLEN];
 
-void printTagCache(THREAD_STATE *thread);
+TRACECLIENT *traceClientptr;
+//quick and dirty way of reducing our time spent looking which module a given address belongs to
+uint threadModArr[MAXTHREADID];
 
 void
 TRACECLIENT::write_sync_bb(char* buf, uint strsize)
@@ -126,7 +116,7 @@ void TRACECLIENT::load_modexclude_strings(char *commaSepPaths)
 
 void processArgs(const char **ask_argv, int ask_argc, TRACECLIENT * client)
 {
-	dr_printf("Client starting with %d options: \n",ask_argc);
+	dr_printf("[drgat]Client starting with %d options: \n",ask_argc);
 	for (int x = 0; x < ask_argc; ++x)
 	{
 		dr_printf("option:%s\n", ask_argv[x]);
@@ -145,18 +135,21 @@ void processArgs(const char **ask_argv, int ask_argc, TRACECLIENT * client)
 			continue;
 		}
 
+		//instrument all libraries by default, de-instrument uwanted with exclude
 		if (arg == "-defaultinstrument")
 		{
 			client->defaultInstrument = true;
 			continue;
 		}
 
+		//specify libraries to instrument
 		if (arg == "-include")
 		{
 			client->load_modinclude_strings((char *)ask_argv[++x]);
 			continue;
 		}
 
+		//used with -defaultinstrument
 		if (arg == "-exclude")
 		{
 			client->load_modexclude_strings((char *)ask_argv[++x]);
@@ -164,53 +157,21 @@ void processArgs(const char **ask_argv, int ask_argc, TRACECLIENT * client)
 		}
 
 	}
-
-
-		
-	/*
-	char *pipename = NULL;
-	if (dr_get_string_option("pipename:",pipename,32))
-		client->pipename = pipename;
-	else
-	{
-		client->pipename = (char *)malloc(10);
-		dr_snprintf(client->pipename, 10, "rgatipc");
-	}
-
-
-	const size_t INCBUFSIZE = 1024*MAXINCLUDES;
-	char *pathBuf = NULL;
-	pathBuf = (char *)malloc(INCBUFSIZE);
-	memset(pathBuf, 0, INCBUFSIZE);
-
-	if (dr_get_string_option("include:",pathBuf,INCBUFSIZE))
-	{
-		client->load_modinclude_strings(pathBuf);
-	}
-	memset(pathBuf, 0, INCBUFSIZE);
-
-	if (dr_get_string_option("exclude:",pathBuf,INCBUFSIZE))
-	{
-		if(!pathBuf) 
-			pathBuf = (char *)malloc(INCBUFSIZE);
-		else
-			memset(pathBuf, 0, INCBUFSIZE);
-		client->load_modexclude_strings(pathBuf);
-	}
-
-	if(pathBuf) free(pathBuf);
-		*/
 }
 
-
+/*
+basic loop compression happens here
+if not in a loop and we jump back, we are setting cache[0] to start of loop
+next iteration we notice the target is cache[0] and start loop increments
+*/
 inline void process_block(app_pc pc, app_pc target, userd *block_data)
 {
 	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
 	thread->sourceInstruction = pc;
-	int tagIdx = thread->tagIdx++; //do increment here to avoid extra read
+	int tagIdx = ++thread->tagIdx; //do increment here to avoid extra read
 	
 	#ifdef VERBOSE_VERBOSE
-	dr_printf("block insaddr %lx bb [tagidx %d addr %lx targ %lx]\n",pc,tagIdx,block_data->appc,target);
+	dr_printf("[drgat]block insaddr %lx bb [tagidx %d addr %lx targ %lx]\n",pc,tagIdx,block_data->appc,target);
 	#endif
 
 	if (tagIdx > TAGCACHESIZE-1)
@@ -227,17 +188,18 @@ inline void process_block(app_pc pc, app_pc target, userd *block_data)
 		thread->blockID_counts[tagIdx] = block_data->blockID_numins;
 
 		//not a back edge so no further processing
-		if ((unsigned long)target > (unsigned long)pc) 
+		//ideally the processing for most blocks ends here
+		if ((void *)target > (void *)pc) 
 			return;
 
 		#ifdef VERBOSE_VERBOSE
-		dr_printf("not in loop insaddr %lx bb [tagidx %d addr %lx targ %lx]\n",pc,tagIdx,block_data->appc,target);
+		dr_printf("[drgat]not in loop insaddr %lx bb [tagidx %d addr %lx targ %lx]\n",pc,tagIdx,block_data->appc,target);
 		#endif
 		
 		if (thread->tagCache[0] == target)//back to start of cache
 		{
 			#ifdef VERBOSE_VERBOSE
-			dr_printf("targ %lx == cache0 %lx -> starting loop",target, thread->tagCache[0]);
+			dr_printf("[drgat]targ %lx == cache0 %lx -> starting loop",target, thread->tagCache[0]);
 			#endif
 			//record cache as first iteration of a loop
 			thread->loopMax = tagIdx;
@@ -247,7 +209,7 @@ inline void process_block(app_pc pc, app_pc target, userd *block_data)
 		else
 		{
 			#ifdef VERBOSE_VERBOSE
-			dr_printf("unknown backedge idx %d, targ %lx!, cache[0] %lx\n",tagIdx,
+			dr_printf("[drgat]unknown backedge idx %d, targ %lx!, cache[0] %lx\n",tagIdx,
 					target,thread->tagCache[0]);
 			#endif
 			//back to something else, dump cache
@@ -260,7 +222,7 @@ inline void process_block(app_pc pc, app_pc target, userd *block_data)
 	if (tagIdx == thread->loopMax) //end of loop
 	{
 		#ifdef VERBOSE_VERBOSE
-		dr_printf("end of loop idx %d, checking targ %lx! =  cache[0] %lx\n",tagIdx,
+		dr_printf("[drgat]end of loop idx %d, checking targ %lx! =  cache[0] %lx\n",tagIdx,
 					target,thread->tagCache[0]);
 		#endif
 
@@ -273,7 +235,7 @@ inline void process_block(app_pc pc, app_pc target, userd *block_data)
 			return;
 		}
 			
-		//leaving loop. print loops up til now + progress on current loop
+		//leaving loop. print loops up until now + progress on current loop
 		--thread->tagIdx;
 		printTagCache(thread);
 
@@ -291,7 +253,7 @@ inline void process_block(app_pc pc, app_pc target, userd *block_data)
 				(thread->targetAddresses[tagIdx] != target)) //leaving mid loop?
 	{
 		#ifdef VERBOSE_VERBOSE
-		dr_printf("loop mismatch dumpcache idx %d, %lx!=%lx,numins:%d, %lx!=%lx\n",tagIdx,
+		dr_printf("[drgat]loop mismatch dumpcache idx %d, %lx!=%lx,numins:%d, %lx!=%lx\n",tagIdx,
 					thread->tagCache[tagIdx],(uint)block_data->appc,	
 					block_data->numInstructions,thread->targetAddresses[tagIdx], target);
 		#endif
@@ -308,14 +270,7 @@ inline void process_block(app_pc pc, app_pc target, userd *block_data)
 	}
 }
 
-/*
-basic loop compression happens here for loops controlled by a conditional at the end
-if not in a loop and we jump back, we are setting cache[0] to start of loop
-next iteration we notice the target is cache[0] and start loop increments
 
-it looks like a lot of crap to be added to every conditional instruction, but most
-will not execute much of it
-*/
 static void at_cbr(app_pc pc, app_pc target, int taken)
 {
 	userd *block_data = (userd *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
@@ -337,34 +292,29 @@ static void at_ubr(app_pc pc, app_pc target)
 	dr_printf("at_ubr %lx->%lx\n",pc,target);
 	#endif
 
-	userd *block_data = (userd *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
+	BLOCKDATA *block_data = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
 	process_block(pc, target, block_data);
 }
 
-static void
-at_mbr(app_pc pc, app_pc target)
+static void at_mbr(app_pc pc, app_pc target)
 {
 	#ifdef VERBOSE_VERBOSE
 	dr_printf("at_mbr %lx -> %lx\n",pc, target);
 	#endif
 
-	userd *block_data = (userd *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
+	BLOCKDATA *block_data = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
 	process_block(pc, target, block_data);
 }
 
-//like ubr
 static void at_call(app_pc pc, app_pc target)
 {
 	#ifdef VERBOSE_VERBOSE
 	dr_printf("at_call addr %lx targ %lx\n",pc,target);
 	#endif
 
-	userd *block_data = (userd *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
+	BLOCKDATA *block_data = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
 	process_block(pc, target, block_data);
 }
-
-
-
 
 
 DR_EXPORT void
@@ -408,45 +358,34 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 	DR_ASSERT(traceClientptr->tls_idx != -1);
 
 	traceClientptr->pid = dr_get_process_id();
-	dr_printf("[drgat init main] Created process %d\n", traceClientptr->pid);
-	char pipeName[255];
+	dr_printf("[drgat]Created process %d\n", traceClientptr->pid);
+	std::string pipeName;
 
-	//dr_snprintf(pipeName, 254, "\\\\.\\pipe\\%s",traceClientptr->pipename);
 	traceClientptr->modpipe = dr_open_file("\\\\.\\pipe\\BootstrapPipe", DR_FILE_WRITE_OVERWRITE);
-
 	if (traceClientptr->modpipe == INVALID_FILE)
 	{
-		//todo: take custom mutex names as an argument
-		dr_snprintf(pipeName, 254, "\\\\.\\pipe\\BootstrapPipe");
-		dr_printf("[drgat]Client connecting to bootstrap pipe %s\n",pipeName);
-		traceClientptr->modpipe = dr_open_file(pipeName, DR_FILE_WRITE_OVERWRITE);
-		if (traceClientptr->modpipe == INVALID_FILE)
-		{
-			dr_printf("[drgat]ERROR: Failed to connect to bootstrap pipe! Exiting...\n");
-			return;
-		}
+		dr_printf("[drgat]ERROR: Failed to connect to bootstrap pipe! Exiting...\n");
+		return;
 	}
 
-	int sz = dr_fprintf(traceClientptr->modpipe, "PID%d", traceClientptr->pid);
+	dr_fprintf(traceClientptr->modpipe, "PID%d", traceClientptr->pid);
 	traceClientptr->modpipe = INVALID_FILE;
+	pipeName = "\\\\.\\pipe\\rioThreadMod";
+	pipeName.append(std::to_string(traceClientptr->pid));
 	while (traceClientptr->modpipe == INVALID_FILE)
 	{
-		dr_snprintf(pipeName, 254, "\\\\.\\pipe\\rioThreadMod%d", traceClientptr->pid);
-		dr_printf("[drgat]Waiting to open %s\n",pipeName);
+		dr_printf("[drgat]Waiting to open %s\n",pipeName.c_str());
 		dr_sleep(600);
-		traceClientptr->modpipe = dr_open_file(pipeName, DR_FILE_WRITE_OVERWRITE);
+		traceClientptr->modpipe = dr_open_file(pipeName.c_str(), DR_FILE_WRITE_OVERWRITE);
 	}
 
 
-	dr_sleep(100);
+	dr_sleep(500);
 
-	traceClientptr->write_sync_mod("Opened mod pipe!\n");
-
-	dr_snprintf(pipeName, 254, "\\\\.\\pipe\\rioThreadBB%d", traceClientptr->pid);
-	traceClientptr->bbpipe = dr_open_file(pipeName, DR_FILE_WRITE_OVERWRITE);
-	DR_ASSERT_MSG(traceClientptr->bbpipe != INVALID_FILE, "No rioThreadBB!");
-		
-	traceClientptr->write_sync_mod("Opened BB pipe!\n");
+	pipeName = "\\\\.\\pipe\\rioThreadBB";
+	pipeName.append(std::to_string(traceClientptr->pid));
+	traceClientptr->bbpipe = dr_open_file(pipeName.c_str(), DR_FILE_WRITE_OVERWRITE);
+	DR_ASSERT_MSG(traceClientptr->bbpipe != INVALID_FILE, "No rioThreadBB pipe!");
 
 	//load executable into module list
 	if(!traceClientptr->excludedModuleStrings.count(appPath))
@@ -461,39 +400,30 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 	traceClientptr->modStarts.push_back(mainmodule->start);
 	traceClientptr->modEnds.push_back(mainmodule->end);
 	
-
-	#if defined WIN64
-	traceClientptr->write_sync_mod("mn@%s@%d@%x@%x@%x", mainmodule->full_path, 0, mainmodule->start, 
-		mainmodule->end, !includedModules[0]);
-	#elif defined WIN32
 	traceClientptr->write_sync_mod("mn@%s@%d@%lx@%lx@%x", mainmodule->full_path, 0,
 		mainmodule->start, mainmodule->end, !traceClientptr->includedModules[0]);
-	#endif
 
 	start_sym_processing(0, mainmodule->full_path);
 	traceClientptr->numMods = 1;
 
-	
 	//start instrumentation
 	dr_register_exit_event(event_exit);
 	drmgr_register_thread_init_event(event_thread_init);
 	drmgr_register_thread_exit_event(event_thread_exit);
 		drmgr_register_exception_event(event_exception);
-	drmgr_register_bb_instrumentation_event(event_bb_analysis,
-		NULL,//event_app_instruction,
-		NULL);
+	drmgr_register_bb_instrumentation_event(event_bb_analysis, NULL, NULL);
+
 	#ifdef WINDOWS
 	drmgr_register_module_load_event(windows_event_module_load);
 	#elif LINUX
 	drmgr_register_module_load_event(linux_event_module_load);
 	#endif
 
-	dr_printf("[drgat]dr_client_main completed...\n");
-
+	dr_printf("[drgat]dr_client_main completed. Starting instrumentation...\n");
 }
 
 
-void event_exit()
+static void event_exit()
 {
 	dr_printf("[drgat]Ready to exit PID%d, waiting for writes to finish\n", dr_get_process_id());
 	dr_sleep(1000); //might not be needed
@@ -504,13 +434,12 @@ void event_exit()
 	dr_flush_file(closer);
 	dr_close_file(closer);
 
-	//should probably free some stuff
+	//should probably free some stuff - meh
 	drmgr_exit();
 	dr_printf("[drgat]exit called for process %d\n", dr_get_process_id());
 }
 
-static void
-event_thread_init(void *threadcontext)
+static void event_thread_init(void *threadcontext)
 {
 	thread_id_t tid = dr_get_thread_id(threadcontext);
 	
@@ -563,23 +492,26 @@ event_thread_exit(void *threadcontext)
 	traceClientptr->write_sync_mod("texit @%d\n", tid);
 }
 
-static uint lastPrintedMod = 999999;
-
+/* 
+this: determines whether a block should be instrumented
+	  inserts code to make the address of the basic block data structure available to analysis code
+	  adds analysis code to conditionals where needed
+	  pipes the basic block opcode data to rgats basicblock thread
+*/
 dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 	instrlist_t *bb,	bool for_trace, bool translating,	void **user_data)
 {
+	char lineStr[MAXDISLEN];
 	thread_id_t tid = dr_get_thread_id(drcontext);
 	uint threadMod = threadModArr[tid];
 	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(drcontext, traceClientptr->tls_idx);
 	
 	char *BBBuf = thread->BBBuf;
-	
 	instr_t *firstIns = instrlist_first_app(bb);
 	app_pc firstiPC = instr_get_app_pc(firstIns);
 	bool isInstrumented = false;
 	int mno = -1;
 
-	
 	uint bufIdx = 0;
 	UINT32 blockID_count = dr_get_random_value(INT_MAX) & 0xffff;
 
@@ -644,17 +576,13 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 	
 	if(!isInstrumented) 
 	{
-		if (instr_is_meta(firstIns))
-		{
-			dr_printf("func %lx is wrapped!\n",firstiPC);
-		}
 		BBBuf[bufIdx] = 0;
-		userd *bb_u_d = 0;
+		BLOCKDATA *bb_u_d = 0;
 		traceClientptr->write_sync_bb(BBBuf, bufIdx);
 		return DR_EMIT_DEFAULT;
 	}
 
-	userd *bb_u_d = (userd *)logged_memalloc(sizeof(userd));
+	BLOCKDATA *bb_u_d = (BLOCKDATA *)logged_memalloc(sizeof(BLOCKDATA));
 	bb_u_d->appc = firstiPC; //tag not always == rip
 
 	unsigned instructionCount = 0;
@@ -691,6 +619,7 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 	dr_restore_reg(drcontext,bb,lasti,DR_REG_XAX,SPILL_SLOT_1);
 
 	
+	//finally add appropriate analysis code to the block terminator
 	if (instr_is_cbr(lasti))
 	{
 		bb_u_d->fallthrough = instr_get_app_pc(lasti) + opnd_size_in_bytes(instr_get_opcode(lasti));
@@ -700,7 +629,7 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 	else if (instr_is_ubr(lasti))
 		dr_insert_ubr_instrumentation(drcontext, bb, lasti, (void*)at_ubr);
 		
-	//far calls are hit here, must evaluate before is_call
+	//order is important here as far calls are hit by this and instr_is_call
 	else if(instr_is_mbr(lasti))
 		dr_insert_mbr_instrumentation(drcontext, bb, lasti, (app_pc)at_mbr,SPILL_SLOT_1);
                         

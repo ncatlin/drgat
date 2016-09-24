@@ -13,7 +13,7 @@
 
 //passed to each basic block clean all 
 //so it can decide whether to print its address
-struct userd {
+struct BLOCKDATA {
 	uint numInstructions;
 	app_pc appc; 
 	app_pc fallthrough;
