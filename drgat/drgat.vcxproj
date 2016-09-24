@@ -12,7 +12,7 @@
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{CEFBB30A-872B-45EA-A75F-745B5AA51B4D}</ProjectGuid>
-    <RootNamespace>drgatx</RootNamespace>
+    <RootNamespace>drgat</RootNamespace>
     <ProjectName>drgat</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
