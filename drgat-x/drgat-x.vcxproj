@@ -1,0 +1,102 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{CEFBB30A-872B-45EA-A75F-745B5AA51B4D}</ProjectGuid>
+    <RootNamespace>drgatx</RootNamespace>
+    <ProjectName>drgat</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v110</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v110</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <IncludePath>C:\Users\nia\Documents\DynamoRIO-Windows-6.1.0-2\ext\include;C:\Users\nia\Documents\DynamoRIO-Windows-6.1.0-2\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Users\nia\Documents\DynamoRIO-Windows-6.1.0-2\ext\lib32\debug;C:\Users\nia\Documents\DynamoRIO-Windows-6.1.0-2\lib32\debug;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <OutputFile>$(OutDir)drgat.dll</OutputFile>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="..\b64encode.h" />
+    <ClInclude Include="..\stdafx.h" />
+    <ClInclude Include="..\targetver.h" />
+    <ClInclude Include="..\traceclient.h" />
+    <ClInclude Include="..\tracestructs.h" />
+    <ClInclude Include="..\utilities.h" />
+    <ClInclude Include="..\windowstrace.h" />
+    <ClInclude Include="..\wrapcryptsp.h" />
+    <ClInclude Include="..\wrapkernel32.h" />
+    <ClInclude Include="..\wrapucrtbase.h" />
+    <ClInclude Include="..\wrapuser32.h" />
+    <ClInclude Include="..\wrapadvapi32.h" />
+    <ClInclude Include="..\wrapntdll.h" />
+    <ClInclude Include="..\wrapwininet.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\b64encode.cpp" />
+    <ClCompile Include="..\stdafx.cpp" />
+    <ClCompile Include="..\traceclient.cpp" />
+    <ClCompile Include="..\utilities.cpp" />
+    <ClCompile Include="..\windowstrace.cpp" />
+    <ClCompile Include="..\wrapcryptsp.cpp" />
+    <ClCompile Include="..\wrapkernel32.cpp" />
+    <ClCompile Include="..\wrapucrtbase.cpp" />
+    <ClCompile Include="..\wrapuser32.cpp" />
+    <ClCompile Include="..\wrapadvapi32.cpp" />
+    <ClCompile Include="..\wrapntdll.cpp" />
+    <ClCompile Include="..\wrapwininet.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
