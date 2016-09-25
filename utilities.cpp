@@ -102,9 +102,10 @@ void printTagCache(THREAD_STATE *thread)
 		byteswritten += dr_fprintf(thread->f, "j%x,%x,%x@",	thread->tagCache[i],thread->targetAddresses[i], thread->blockID_counts[i]);
 	}
 
+	//pipe closed, rgat probably closed too
 	if ((int)byteswritten < 0)
 	{
-		dr_printf("[drgat]Failed to write to rgat! Assumed closed. Killing process...\n");
+		dr_sleep(1500);
 		dr_exit_process(-1);
 	}
 	

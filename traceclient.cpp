@@ -112,8 +112,8 @@ void TRACECLIENT::load_modexclude_strings(char *commaSepPaths)
 
 void processArgs(const char **ask_argv, int ask_argc, TRACECLIENT * client)
 {
-	dr_printf("[drgat]Client starting with %d options: \n",ask_argc);
-	for (int x = 0; x < ask_argc; ++x)
+	dr_printf("[drgat]Client starting with %d options: \n",ask_argc-1);
+	for (int x = 1; x < ask_argc; ++x)
 	{
 		dr_printf("option:%s\n", ask_argv[x]);
 		std::string arg(ask_argv[x]);
@@ -316,8 +316,6 @@ static void at_call(app_pc pc, app_pc target)
 DR_EXPORT void
 dr_client_main(client_id_t id, int argc, const char *argv[])
 {
-
-	dr_printf("[drgat]Starting Instrumentation\n");
 	dr_set_client_name("rgat instrumentation client", "https://github.com/ncatlin/rgat");
 	
 	drmgr_init();
@@ -345,39 +343,41 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 
 	processArgs(ask_argv, ask_argc, traceClientptr);
 
-	//dr_messagebox("Set %s to true",appPath.c_str());
-
 	traceClientptr->allocMutx = dr_mutex_create();
 	traceClientptr->latestAllocNode = (ALLOCLL *)dr_thread_alloc(clientContext, sizeof(ALLOCLL));
-
 	traceClientptr->tls_idx = drmgr_register_tls_field();
 	DR_ASSERT(traceClientptr->tls_idx != -1);
-
 	traceClientptr->pid = dr_get_process_id();
-	dr_printf("[drgat]Created process %d\n", traceClientptr->pid);
-	std::string pipeName;
 
+	
+	dr_printf("[drgat]Starting instrumentation of %s (PID:%d)\n",appPath.c_str(),traceClientptr->pid);
+
+	std::string pipeName;
 	traceClientptr->modpipe = dr_open_file("\\\\.\\pipe\\BootstrapPipe", DR_FILE_WRITE_OVERWRITE);
-	if (traceClientptr->modpipe == INVALID_FILE)
+	while (traceClientptr->modpipe == INVALID_FILE)
 	{
-		dr_printf("[drgat]ERROR: Failed to connect to bootstrap pipe! Exiting...\n");
-		return;
+		dr_sleep(600);
+		dr_printf("[drgat]Warning: Waiting to connect to bootstrap pipe!\n");
+		traceClientptr->modpipe = dr_open_file("\\\\.\\pipe\\BootstrapPipe", DR_FILE_WRITE_OVERWRITE);
 	}
 
+	//notify rgat to create threads for this process
 	dr_fprintf(traceClientptr->modpipe, "PID%d", traceClientptr->pid);
+	dr_sleep(600);
+
 	traceClientptr->modpipe = INVALID_FILE;
 	pipeName = "\\\\.\\pipe\\rioThreadMod";
 	pipeName.append(std::to_string(traceClientptr->pid));
+
+	traceClientptr->modpipe = dr_open_file(pipeName.c_str(), DR_FILE_WRITE_OVERWRITE);
 	while (traceClientptr->modpipe == INVALID_FILE)
 	{
-		dr_printf("[drgat]Waiting to open %s\n",pipeName.c_str());
 		dr_sleep(600);
+		dr_printf("[drgat]Waiting to open %s\n",pipeName.c_str());
 		traceClientptr->modpipe = dr_open_file(pipeName.c_str(), DR_FILE_WRITE_OVERWRITE);
 	}
 
-
 	dr_sleep(500);
-
 	pipeName = "\\\\.\\pipe\\rioThreadBB";
 	pipeName.append(std::to_string(traceClientptr->pid));
 	traceClientptr->bbpipe = dr_open_file(pipeName.c_str(), DR_FILE_WRITE_OVERWRITE);
@@ -414,8 +414,6 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 	#elif LINUX
 	drmgr_register_module_load_event(linux_event_module_load);
 	#endif
-
-	dr_printf("[drgat]dr_client_main completed. Starting instrumentation...\n");
 }
 
 
