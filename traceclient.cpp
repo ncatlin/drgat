@@ -4,9 +4,6 @@ Every instruction of target (internal) code, in order
 The first address of non-target (external) code
 Need to record target of every jump in case it hits external + can check conditional completion offline
 */
-#include "headers\windowstrace.h"
-#include "headers\traceclient.h"
-#include "headers\utilities.h"
 
 
 #define _WIN32
@@ -16,6 +13,9 @@ Need to record target of every jump in case it hits external + can check conditi
 #define WINVER _WIN32_WINNT_WIN7  
 #define NTDDI_VERSION _WIN32_WINNT_WIN7  
 
+#include "headers\windowstrace.h"
+#include "headers\traceclient.h"
+#include "headers\utilities.h"
 
 //todo: sort crash if target buffer full (ie: paused w/debugger)
 //#define VERBOSE_VERBOSE
@@ -164,7 +164,7 @@ inline void process_block(app_pc pc, app_pc target, BLOCKDATA *block_data)
 {
 	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
 	thread->sourceInstruction = pc;
-	int tagIdx = ++thread->tagIdx; //do increment here to avoid extra read
+	int tagIdx = thread->tagIdx++; //do increment here to avoid extra read
 	
 	#ifdef VERBOSE_VERBOSE
 	dr_printf("[drgat]block insaddr %lx bb [tagidx %d addr %lx targ %lx]\n",pc,tagIdx,block_data->appc,target);
