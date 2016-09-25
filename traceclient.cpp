@@ -18,7 +18,6 @@ Need to record target of every jump in case it hits external + can check conditi
 #include "headers\utilities.h"
 
 //todo: sort crash if target buffer full (ie: paused w/debugger)
-//#define VERBOSE_VERBOSE
 
 static void event_thread_init(void *drcontext);
 static void event_thread_exit(void *drcontext);
@@ -35,6 +34,10 @@ static dr_emit_flags_t event_app_instruction(void *drcontext, void *tag,
 
 #define MAXTHREADID 65000
 #define MAXDISLEN 4096 
+
+#ifdef DEBUG_LOGGING
+file_t dbgfile;
+#endif
 
 TRACECLIENT *traceClientptr;
 //quick and dirty way of reducing our time spent looking which module a given address belongs to
@@ -166,8 +169,8 @@ inline void process_block(app_pc pc, app_pc target, BLOCKDATA *block_data)
 	thread->sourceInstruction = pc;
 	int tagIdx = thread->tagIdx++; //do increment here to avoid extra read
 	
-	#ifdef VERBOSE_VERBOSE
-	dr_printf("[drgat]block insaddr %lx bb [tagidx %d addr %lx targ %lx]\n",pc,tagIdx,block_data->appc,target);
+	#ifdef DEBUG_LOGGING
+	dr_fprintf(thread->dbgfile,"process_block insaddr 0x%lx bb [tagidx %d addr 0x%lx targ 0x%lx]\n",pc,tagIdx,block_data->appc,target);
 	#endif
 
 	if (tagIdx > TAGCACHESIZE-1)
@@ -188,14 +191,14 @@ inline void process_block(app_pc pc, app_pc target, BLOCKDATA *block_data)
 		if ((void *)target > (void *)pc) 
 			return;
 
-		#ifdef VERBOSE_VERBOSE
-		dr_printf("[drgat]not in loop insaddr %lx bb [tagidx %d addr %lx targ %lx]\n",pc,tagIdx,block_data->appc,target);
+		#ifdef DEBUG_LOGGING
+		dr_fprintf(thread->dbgfile,"\tnot in loop insaddr 0x%lx bb [tagidx %d addr 0x%lx targ 0x%lx]\n",pc,tagIdx,block_data->appc,target);
 		#endif
 		
 		if (thread->tagCache[0] == target)//back to start of cache
 		{
-			#ifdef VERBOSE_VERBOSE
-			dr_printf("[drgat]targ %lx == cache0 %lx -> starting loop",target, thread->tagCache[0]);
+			#ifdef DEBUG_LOGGING
+			dr_fprintf(thread->dbgfile,"\ttarg 0x%lx == cache0 0x%lx -> starting loop",target, thread->tagCache[0]);
 			#endif
 			//record cache as first iteration of a loop
 			thread->loopMax = tagIdx;
@@ -204,8 +207,8 @@ inline void process_block(app_pc pc, app_pc target, BLOCKDATA *block_data)
 		}
 		else
 		{
-			#ifdef VERBOSE_VERBOSE
-			dr_printf("[drgat]unknown backedge idx %d, targ %lx!, cache[0] %lx\n",tagIdx,
+			#ifdef DEBUG_LOGGING
+			dr_fprintf(thread->dbgfile,"\tunknown backedge idx %d, targ 0x%lx!, cache[0] 0x%lx\n",tagIdx,
 					target,thread->tagCache[0]);
 			#endif
 			//back to something else, dump cache
@@ -217,8 +220,8 @@ inline void process_block(app_pc pc, app_pc target, BLOCKDATA *block_data)
 
 	if (tagIdx == thread->loopMax) //end of loop
 	{
-		#ifdef VERBOSE_VERBOSE
-		dr_printf("[drgat]end of loop idx %d, checking targ %lx! =  cache[0] %lx\n",tagIdx,
+		#ifdef DEBUG_LOGGING
+		dr_fprintf(thread->dbgfile,"\tend of loop idx %d, checking targ 0x%lx! =  cache[0] 0x%lx\n",tagIdx,
 					target,thread->tagCache[0]);
 		#endif
 
@@ -248,8 +251,8 @@ inline void process_block(app_pc pc, app_pc target, BLOCKDATA *block_data)
 		(thread->blockID_counts[tagIdx] != block_data->blockID_numins) || //same BB start, different end?
 				(thread->targetAddresses[tagIdx] != target)) //leaving mid loop?
 	{
-		#ifdef VERBOSE_VERBOSE
-		dr_printf("[drgat]loop mismatch dumpcache idx %d, %lx!=%lx,numins:%d, %lx!=%lx\n",tagIdx,
+		#ifdef DEBUG_LOGGING
+		dr_fprintf(thread->dbgfile,"\tloop mismatch dumpcache idx %d, 0x%lx!=0x%lx,numins:%d, 0x%lx!=0x%lx\n",tagIdx,
 					thread->tagCache[tagIdx],(uint)block_data->appc,	
 					block_data->numInstructions,thread->targetAddresses[tagIdx], target);
 		#endif
@@ -267,25 +270,28 @@ inline void process_block(app_pc pc, app_pc target, BLOCKDATA *block_data)
 }
 
 
-static void at_cbr(app_pc pc, app_pc target, int taken)
+static void at_cbr(app_pc pc, app_pc target, app_pc fallthrough, int taken, void *u_d)
 {
-	BLOCKDATA *block_data = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
+	BLOCKDATA *block_data = (BLOCKDATA *)u_d;
 
-	#ifdef VERBOSE_VERBOSE
-	dr_printf("at_cbr pc%lx targ %lx bb%lx falladdr:%lx taken:%d\n",pc,target,block_data->appc,block_data->fallthrough,taken);
+	#ifdef DEBUG_LOGGING
+	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+	dr_fprintf(thread->dbgfile,"at_cbr pc 0x%lx target 0x%lx blockhead 0x%lx fallthroughaddr:0x%lx taken:%d\n",
+		pc,target,block_data->appc,fallthrough,taken);
 	#endif
 
 	if (taken)
 		process_block(pc, target, block_data);
 	else
-		process_block(pc, block_data->fallthrough, block_data);
+		process_block(pc, fallthrough, block_data);
 }
 
 
 static void at_ubr(app_pc pc, app_pc target)
 {
-	#ifdef VERBOSE_VERBOSE
-	dr_printf("at_ubr %lx->%lx\n",pc,target);
+	#ifdef DEBUG_LOGGING
+	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+	dr_fprintf(thread->dbgfile,"at_ubr 0x%lx->0x%lx\n",pc,target);
 	#endif
 
 	BLOCKDATA *block_data = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
@@ -294,8 +300,9 @@ static void at_ubr(app_pc pc, app_pc target)
 
 static void at_mbr(app_pc pc, app_pc target)
 {
-	#ifdef VERBOSE_VERBOSE
-	dr_printf("at_mbr %lx -> %lx\n",pc, target);
+	#ifdef DEBUG_LOGGING
+	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+	dr_fprintf(thread->dbgfile, "at_mbr address 0x%lx -> 0x%lx\n",pc, target);
 	#endif
 
 	BLOCKDATA *block_data = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
@@ -304,8 +311,9 @@ static void at_mbr(app_pc pc, app_pc target)
 
 static void at_call(app_pc pc, app_pc target)
 {
-	#ifdef VERBOSE_VERBOSE
-	dr_printf("at_call addr %lx targ %lx\n",pc,target);
+	#ifdef DEBUG_LOGGING
+	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+	dr_fprintf(thread->dbgfile, "at_call address 0x%lx -> 0x%lx\n",pc,target);
 	#endif
 
 	BLOCKDATA *block_data = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
@@ -349,7 +357,12 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 	DR_ASSERT(traceClientptr->tls_idx != -1);
 	traceClientptr->pid = dr_get_process_id();
 
-	
+#ifdef DEBUG_LOGGING
+	char filebuf[MAX_PATH];
+	dr_get_current_directory(filebuf, MAX_PATH);
+	std::string threadDbgFile = filebuf+std::string("\\")+"BBlog"+std::to_string(traceClientptr->pid)+".txt";
+	dbgfile = dr_open_file(threadDbgFile.c_str(), DR_FILE_WRITE_OVERWRITE);
+#endif
 	dr_printf("[drgat]Starting instrumentation of %s (PID:%d)\n",appPath.c_str(),traceClientptr->pid);
 
 	std::string pipeName;
@@ -465,7 +478,12 @@ static void event_thread_init(void *threadcontext)
 	thread->cacheRepeats = 0;
 	thread->loopMax = 0;
 	thread->lastTick = 0;
-
+#ifdef DEBUG_LOGGING
+	char filebuf[MAX_PATH];
+	dr_get_current_directory(filebuf, MAX_PATH);
+	std::string threadDbgFile = filebuf+std::string("\\")+"tracelog"+std::to_string(traceClientptr->pid)+std::to_string(tid)+".txt";
+	thread->dbgfile = dr_open_file(threadDbgFile.c_str(), DR_FILE_WRITE_OVERWRITE);
+#endif
 	drmgr_set_tls_field(threadcontext, traceClientptr->tls_idx, (THREAD_STATE *)thread);
 	dr_flush_file(thread->f);
 }
@@ -503,6 +521,11 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 	char *BBBuf = thread->BBBuf;
 	instr_t *firstIns = instrlist_first_app(bb);
 	app_pc firstiPC = instr_get_app_pc(firstIns);
+
+	#ifdef DEBUG_LOGGING
+	dr_fprintf(dbgfile,"basic block head: %lx\n",firstiPC);
+	#endif
+
 	bool isInstrumented = false;
 	int mno = -1;
 
@@ -586,6 +609,9 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 	//opcodes for each instruction
 	for (instr_t *ins = firstIns; ins != NULL; ins = instr_get_next(ins)) 
 	{
+		#ifdef DEBUG_LOGGING
+		dr_fprintf(dbgfile,"\t instrumented block instruction: %lx\n",instr_get_app_pc(ins));
+		#endif
 		++instructionCount;
 		lineIdx = dr_snprintf(lineStr + lineIdx, 1, "@");
 
@@ -604,40 +630,37 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 	traceClientptr->write_sync_bb(BBBuf, bufIdx);
 
 	instr_t *lasti = instrlist_last_app(bb);
-
-	//block processing is done at the end of the block, but we need to know first instruction of block there
-	//put BB data pointer in spill slot 2 (via XAX which we save/restore using slot 1)
-	dr_save_reg(drcontext, bb, lasti, DR_REG_XAX, SPILL_SLOT_1);
-	instr_t *in = INSTR_CREATE_mov_imm(drcontext, opnd_create_reg(DR_REG_XAX), OPND_CREATE_INT32(bb_u_d));
-	instrlist_meta_preinsert(bb,lasti,in);
-	dr_save_reg(drcontext, bb, lasti, DR_REG_XAX, SPILL_SLOT_2);
-	dr_restore_reg(drcontext,bb,lasti,DR_REG_XAX,SPILL_SLOT_1);
-
 	
 	//finally add appropriate analysis code to the block terminator
 	if (instr_is_cbr(lasti))
+		dr_insert_cbr_instrumentation_ex(drcontext, bb, lasti, (void*)at_cbr, OPND_CREATE_INT32(bb_u_d));
+	else 
 	{
-		bb_u_d->fallthrough = instr_get_app_pc(lasti) + opnd_size_in_bytes(instr_get_opcode(lasti));
-		dr_insert_cbr_instrumentation(drcontext, bb, lasti, (void*)at_cbr);
-	}
+		//the other instrumentation methods don't allow passing of a user argument
+		//so we have to transfer it via spill slots instead
+		dr_save_reg(drcontext, bb, lasti, DR_REG_XAX, SPILL_SLOT_1);
+		instr_t *in = INSTR_CREATE_mov_imm(drcontext, opnd_create_reg(DR_REG_XAX), OPND_CREATE_INT32(bb_u_d));
+		instrlist_meta_preinsert(bb,lasti,in);
+		dr_save_reg(drcontext, bb, lasti, DR_REG_XAX, SPILL_SLOT_2);
+		dr_restore_reg(drcontext,bb,lasti,DR_REG_XAX,SPILL_SLOT_1);
 
-	else if (instr_is_ubr(lasti))
-		dr_insert_ubr_instrumentation(drcontext, bb, lasti, (void*)at_ubr);
+		if (instr_is_ubr(lasti))
+			dr_insert_ubr_instrumentation(drcontext, bb, lasti, (void*)at_ubr);
 		
-	//order is important here as far calls are hit by this and instr_is_call
-	else if(instr_is_mbr(lasti))
-		dr_insert_mbr_instrumentation(drcontext, bb, lasti, (app_pc)at_mbr,SPILL_SLOT_1);
+		//order is important here as far calls are hit by this and instr_is_call
+		else if(instr_is_mbr(lasti))
+			dr_insert_mbr_instrumentation(drcontext, bb, lasti, (app_pc)at_mbr,SPILL_SLOT_1);
                         
-	else if (instr_is_call(lasti)) //is_call_direct?
-		dr_insert_call_instrumentation(drcontext, bb, lasti, (void*)at_call);
+		else if (instr_is_call(lasti))
+			dr_insert_call_instrumentation(drcontext, bb, lasti, (void*)at_call);
 
-	else
-	{
-		std::stringstream badterm;
-		badterm << "[drgat]Unhandled block terminator: " << std::hex << instr_get_opcode(lasti);
-		DR_ASSERT_MSG(0,badterm.str().c_str());
+		else
+			{
+			std::stringstream badterm;
+			badterm << "[drgat]Unhandled block terminator: " << std::hex << instr_get_opcode(lasti);
+			DR_ASSERT_MSG(0,badterm.str().c_str());
+			}
 	}
-	
 	return DR_EMIT_DEFAULT;
 }
 

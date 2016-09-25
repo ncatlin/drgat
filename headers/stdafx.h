@@ -3,14 +3,14 @@
 // are changed infrequently
 //
 
+//uncomment to compile drgat-debuglog.dll
+//#define DEBUG_LOGGING
 
 #pragma once
        
 #define WINDOWS
 #define X86_32
 //#if defined _WIN32
-
-#define MAXSYMBOLS 10000
 
 #include "dr_api.h"
 #include <stddef.h> /* for offsetof */

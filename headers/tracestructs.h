@@ -22,6 +22,10 @@ typedef struct {
 	file_t f; //trace pipe
 	thread_id_t tid;
 	
+	#ifdef DEBUG_LOGGING
+	file_t dbgfile;
+	#endif
+
 	char *BBBuf; //per thread basic block buffer
 	app_pc sourceInstruction;
 	app_pc tagCache[TAGCACHESIZE];
