@@ -5,9 +5,9 @@
 //doing this for lots of big dll's is a lot of work
 bool symCB(const char *name, size_t modoffs, callback_data *cbd)
 {
-	char b64sym[STRINGBUFMAX];
-	b64_string_arg(name,b64sym); //@'s in symbols will wreck parsing
-	traceClientptr->write_sync_mod("s!@%d@%s@%x@", cbd->modnum, b64sym, modoffs);
+	//char b64sym[STRINGBUFMAX];
+	//b64_string_arg(name,b64sym); //@'s in symbols will wreck parsing
+	traceClientptr->write_sync_mod("s!@%d@%x@%s", cbd->modnum, modoffs, name);
 	return TRUE;
 }
 
