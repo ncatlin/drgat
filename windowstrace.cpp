@@ -15,9 +15,10 @@ void windows_event_module_load(void *drcontext, const module_data_t *info, bool 
 	//we need the executable to be module[0], but it's not always the first presented
 	//so we handle it in client_init and skip it when this is called
 	if (info->start == traceClientptr->modStarts[0])
-		return;
+	{
+		dr_printf("[drgat] skipping mod start\n");
+		return;}
 
-	//dr_printf("1Loading module %s base:%lx\n", info->full_path, info->start);
 	std::string path(info->full_path);
 	std::transform(path.begin(), path.end(), path.begin(), ::tolower);
 	
@@ -34,6 +35,11 @@ void windows_event_module_load(void *drcontext, const module_data_t *info, bool 
 	}
 
 	int modindex = traceClientptr->numMods++;
+		char b64path[STRINGBUFMAX];
+	b64_string_arg(info->full_path,b64path);
+	traceClientptr->write_sync_mod("mn@%s@%d@%lx@%lx@%x", 
+		b64path, modindex, info->start, info->end, !traceClientptr->includedModules[modindex]);
+
 	traceClientptr->includedModules.push_back(isInstrumented);
 
 	traceClientptr->modStarts.push_back(info->start);
@@ -61,9 +67,7 @@ void windows_event_module_load(void *drcontext, const module_data_t *info, bool 
 	else if (path == "c:\\windows\\system32\\ucrtbase.dll" || path == "c:\\windows\\system32\\ucrtbased.dll")
 		wrap_ucrtbase(info->handle);
 
-	traceClientptr->write_sync_mod("mn@%s@%d@%lx@%lx@%x", info->full_path, modindex,
-		info->start, info->end, !traceClientptr->includedModules[modindex]);
-
+	dr_sleep(5);//visualiser crashes if a symbol gets to it before the module path
 	start_sym_processing(modindex, info->full_path);
 }
 

@@ -4,7 +4,7 @@
 #pragma once
 
 
-
+#define MAXTHREADID 65000
 
 //if a call blocks it could be in middle of a tag cache
 //if we want to see the red line waiting on it during runtime we have to dump the cache
@@ -17,7 +17,7 @@ struct BLOCKDATA {
 	uint numInstructions;
 	app_pc appc; 
 	app_pc fallthrough;
-	uint blockID_numins;
+	UINT64 blockID_numins;
 };
 
 typedef struct {
@@ -26,8 +26,17 @@ typedef struct {
 	void *next;
 } ALLOCLL;
 
-#define MAXINCLUDES 128
+#define OPTIMISED_TRACING 0
+#define DEBUG_TRACING 1
 
+#define AT_CBR 0
+#define AT_UBR 1
+#define AT_MBR 2
+#define AT_CALL 3
+
+
+#define MAXINCLUDES 128
+#define MAXDISLEN 4096 
 
 //todo: put stuff protected/private
 class TRACECLIENT {
@@ -39,6 +48,9 @@ public:
 	 bool inIgnored;
 	 //shorten sleeps, timers
 	 bool hidetime;
+	 //send tags to visualiser as soon as block executed
+	 char processingMode;
+	 char lineStr[MAXDISLEN];
 
 	 TRACECLIENT(std::string path)
 	 {
@@ -47,6 +59,7 @@ public:
 		 currentMod = 0;
 		 ignoreWinDll = false;
 		 inIgnored = false;
+		 processingMode = OPTIMISED_TRACING;
 		 defaultInstrument = false;
 		 file_t modpipe = 0;
 		 file_t bbpipe = 0;

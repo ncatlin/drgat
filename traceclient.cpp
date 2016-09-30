@@ -32,8 +32,17 @@ static dr_emit_flags_t event_app_instruction(void *drcontext, void *tag,
 	bool for_trace, bool translating,
 	void *user_data);
 
-#define MAXTHREADID 65000
-#define MAXDISLEN 4096 
+
+static void at_cbr(app_pc pc, app_pc target, app_pc fallthrough, int taken, void *u_d);
+static void at_ubr(app_pc pc, app_pc target);
+static void at_mbr(app_pc pc, app_pc target);
+static void at_call(app_pc pc, app_pc target);
+
+static void at_cbr_dbg(app_pc pc, app_pc target, app_pc fallthrough, int taken, void *u_d);
+static void at_ubr_dbg(app_pc pc, app_pc target);
+static void at_mbr_dbg(app_pc pc, app_pc target);
+static void at_call_dbg(app_pc pc, app_pc target);
+void *instrumentationTable[2][4];
 
 #ifdef DEBUG_LOGGING
 file_t dbgfile;
@@ -134,6 +143,13 @@ void processArgs(const char **ask_argv, int ask_argc, TRACECLIENT * client)
 			continue;
 		}
 
+		//hide sleeps/shorten tick counts
+		if (arg == "-blkdebug")
+		{
+			client->processingMode = DEBUG_TRACING;
+			continue;
+		}
+
 		//instrument all libraries by default, de-instrument uwanted with exclude
 		if (arg == "-defaultinstrument")
 		{
@@ -179,7 +195,7 @@ inline void process_block(app_pc pc, app_pc target, BLOCKDATA *block_data)
 		tagIdx = 0;
 	}
 
-	if (!thread->loopMax)
+	if (!thread->loopEnd)
 	{
 		//not in loop, record new block info in cache
 		thread->tagCache[tagIdx] = block_data->appc;
@@ -201,7 +217,7 @@ inline void process_block(app_pc pc, app_pc target, BLOCKDATA *block_data)
 			dr_fprintf(thread->dbgfile,"\ttarg 0x%lx == cache0 0x%lx -> starting loop",target, thread->tagCache[0]);
 			#endif
 			//record cache as first iteration of a loop
-			thread->loopMax = tagIdx;
+			thread->loopEnd = tagIdx;
 			thread->cacheRepeats++;
 			thread->tagIdx = 0;
 		}
@@ -218,7 +234,7 @@ inline void process_block(app_pc pc, app_pc target, BLOCKDATA *block_data)
 	}
 
 
-	if (tagIdx == thread->loopMax) //end of loop
+	if (tagIdx == thread->loopEnd) //end of loop
 	{
 		#ifdef DEBUG_LOGGING
 		dr_fprintf(thread->dbgfile,"\tend of loop idx %d, checking targ 0x%lx! =  cache[0] 0x%lx\n",tagIdx,
@@ -272,18 +288,17 @@ inline void process_block(app_pc pc, app_pc target, BLOCKDATA *block_data)
 
 static void at_cbr(app_pc pc, app_pc target, app_pc fallthrough, int taken, void *u_d)
 {
-	BLOCKDATA *block_data = (BLOCKDATA *)u_d;
-
 	#ifdef DEBUG_LOGGING
+	BLOCKDATA *block_data = (BLOCKDATA *)u_d;
 	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
 	dr_fprintf(thread->dbgfile,"at_cbr pc 0x%lx target 0x%lx blockhead 0x%lx fallthroughaddr:0x%lx taken:%d\n",
 		pc,target,block_data->appc,fallthrough,taken);
 	#endif
 
 	if (taken)
-		process_block(pc, target, block_data);
+		process_block(pc, target, (BLOCKDATA *)u_d);
 	else
-		process_block(pc, fallthrough, block_data);
+		process_block(pc, fallthrough, (BLOCKDATA *)u_d);
 }
 
 
@@ -294,8 +309,7 @@ static void at_ubr(app_pc pc, app_pc target)
 	dr_fprintf(thread->dbgfile,"at_ubr 0x%lx->0x%lx\n",pc,target);
 	#endif
 
-	BLOCKDATA *block_data = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
-	process_block(pc, target, block_data);
+	process_block(pc, target, (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2));
 }
 
 static void at_mbr(app_pc pc, app_pc target)
@@ -305,8 +319,7 @@ static void at_mbr(app_pc pc, app_pc target)
 	dr_fprintf(thread->dbgfile, "at_mbr address 0x%lx -> 0x%lx\n",pc, target);
 	#endif
 
-	BLOCKDATA *block_data = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
-	process_block(pc, target, block_data);
+	process_block(pc, target, (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2));
 }
 
 static void at_call(app_pc pc, app_pc target)
@@ -316,10 +329,66 @@ static void at_call(app_pc pc, app_pc target)
 	dr_fprintf(thread->dbgfile, "at_call address 0x%lx -> 0x%lx\n",pc,target);
 	#endif
 
-	BLOCKDATA *block_data = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
-	process_block(pc, target, block_data);
+	process_block(pc, target, (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2));
 }
 
+static void at_cbr_dbg(app_pc pc, app_pc target, app_pc fallthrough, int taken, void *u_d)
+{
+	#ifdef DEBUG_LOGGING
+	BLOCKDATA *block_data = (BLOCKDATA *)u_d;
+	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+	dr_fprintf(thread->dbgfile,"at_cbr pc 0x%lx target 0x%lx blockhead 0x%lx fallthroughaddr:0x%lx taken:%d\n",
+		pc,target,block_data->appc,fallthrough,taken);
+	#endif
+
+	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+	BLOCKDATA *blockdata = (BLOCKDATA *)u_d;
+	if (taken)
+		dr_fprintf(thread->f, "j%x,%x,%llx@", blockdata->appc, target, blockdata->blockID_numins);
+	else
+		dr_fprintf(thread->f, "j%x,%x,%llx@", blockdata->appc, fallthrough, blockdata->blockID_numins);
+	dr_flush_file(thread->f);
+}
+
+
+static void at_ubr_dbg(app_pc pc, app_pc target)
+{
+	#ifdef DEBUG_LOGGING
+	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+	dr_fprintf(thread->dbgfile,"at_ubr 0x%lx->0x%lx\n",pc,target);
+	#endif
+
+	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+	BLOCKDATA *blockdata = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
+	dr_fprintf(thread->f, "j%x,%x,%llx@", blockdata->appc, target, blockdata->blockID_numins);
+	dr_flush_file(thread->f);
+}
+
+static void at_mbr_dbg(app_pc pc, app_pc target)
+{
+	#ifdef DEBUG_LOGGING
+	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+	dr_fprintf(thread->dbgfile, "at_mbr address 0x%lx -> 0x%lx\n",pc, target);
+	#endif
+
+	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+	BLOCKDATA *blockdata = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
+	dr_fprintf(thread->f, "j%x,%x,%llx@", blockdata->appc, target, blockdata->blockID_numins);
+	dr_flush_file(thread->f);
+}
+
+static void at_call_dbg(app_pc pc, app_pc target)
+{
+	#ifdef DEBUG_LOGGING
+	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+	dr_fprintf(thread->dbgfile, "at_call address 0x%lx -> 0x%lx\n",pc,target);
+	#endif
+
+	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+	BLOCKDATA *blockdata = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
+	dr_fprintf(thread->f, "j%x,%x,%llx@", blockdata->appc, target, blockdata->blockID_numins);
+	dr_flush_file(thread->f);
+}
 
 DR_EXPORT void
 dr_client_main(client_id_t id, int argc, const char *argv[])
@@ -328,6 +397,16 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 	
 	drmgr_init();
 	drwrap_init();
+
+	instrumentationTable[OPTIMISED_TRACING][AT_CBR] = at_cbr;
+	instrumentationTable[OPTIMISED_TRACING][AT_UBR] = at_ubr;
+	instrumentationTable[OPTIMISED_TRACING][AT_MBR] = at_mbr;
+	instrumentationTable[OPTIMISED_TRACING][AT_CALL] = at_call;
+	instrumentationTable[DEBUG_TRACING][AT_CBR] = at_cbr_dbg;
+	instrumentationTable[DEBUG_TRACING][AT_UBR] = at_ubr_dbg;
+	instrumentationTable[DEBUG_TRACING][AT_MBR] = at_mbr_dbg;
+	instrumentationTable[DEBUG_TRACING][AT_CALL] = at_call_dbg;
+
 	void *clientContext = dr_get_current_drcontext();
 	
 	int ask_argc;
@@ -352,7 +431,7 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 	processArgs(ask_argv, ask_argc, traceClientptr);
 
 	traceClientptr->allocMutx = dr_mutex_create();
-	traceClientptr->latestAllocNode = (ALLOCLL *)dr_thread_alloc(clientContext, sizeof(ALLOCLL));
+	traceClientptr->latestAllocNode = (ALLOCLL *)dr_global_alloc(sizeof(ALLOCLL));
 	traceClientptr->tls_idx = drmgr_register_tls_field();
 	DR_ASSERT(traceClientptr->tls_idx != -1);
 	traceClientptr->pid = dr_get_process_id();
@@ -362,15 +441,24 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 	dr_get_current_directory(filebuf, MAX_PATH);
 	std::string threadDbgFile = filebuf+std::string("\\")+"BBlog"+std::to_string(traceClientptr->pid)+".txt";
 	dbgfile = dr_open_file(threadDbgFile.c_str(), DR_FILE_WRITE_OVERWRITE);
+
+	dr_printf("[drgat]This is the debug drgat dll! Writing logs to %s with a significant performance impact\n",filebuf);
 #endif
 	dr_printf("[drgat]Starting instrumentation of %s (PID:%d)\n",appPath.c_str(),traceClientptr->pid);
 
 	std::string pipeName;
 	traceClientptr->modpipe = dr_open_file("\\\\.\\pipe\\BootstrapPipe", DR_FILE_WRITE_OVERWRITE);
+	int failLimit = 3;
 	while (traceClientptr->modpipe == INVALID_FILE)
 	{
+		if(!--failLimit)
+			{
+				dr_printf("[drgat]Failed on opening pipe %s\n",pipeName.c_str());
+				dr_close_file(traceClientptr->modpipe);
+				dr_abort();
+				return;
+			}
 		dr_sleep(600);
-		dr_printf("[drgat]Warning: Waiting to connect to bootstrap pipe!\n");
 		traceClientptr->modpipe = dr_open_file("\\\\.\\pipe\\BootstrapPipe", DR_FILE_WRITE_OVERWRITE);
 	}
 
@@ -383,11 +471,19 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 	pipeName.append(std::to_string(traceClientptr->pid));
 
 	traceClientptr->modpipe = dr_open_file(pipeName.c_str(), DR_FILE_WRITE_OVERWRITE);
+	failLimit = 3;
 	while (traceClientptr->modpipe == INVALID_FILE)
 	{
+		if(!--failLimit)
+			{
+				dr_printf("[drgat]Failed on opening pipe %s\n",pipeName.c_str());
+				dr_close_file(traceClientptr->modpipe);
+				dr_abort();
+				return;
+			}
 		dr_sleep(600);
-		dr_printf("[drgat]Waiting to open %s\n",pipeName.c_str());
 		traceClientptr->modpipe = dr_open_file(pipeName.c_str(), DR_FILE_WRITE_OVERWRITE);
+		
 	}
 
 	dr_sleep(500);
@@ -409,7 +505,9 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 	traceClientptr->modStarts.push_back(mainmodule->start);
 	traceClientptr->modEnds.push_back(mainmodule->end);
 	
-	traceClientptr->write_sync_mod("mn@%s@%d@%lx@%lx@%x", mainmodule->full_path, 0,
+	char b64path[STRINGBUFMAX];
+	b64_string_arg(mainmodule->full_path,b64path);
+	traceClientptr->write_sync_mod("mn@%s@%d@%lx@%lx@%x", b64path, 0,
 		mainmodule->start, mainmodule->end, !traceClientptr->includedModules[0]);
 
 	start_sym_processing(0, mainmodule->full_path);
@@ -476,7 +574,7 @@ static void event_thread_init(void *threadcontext)
 	thread->BBBuf = (char *)dr_thread_alloc(threadcontext, MAXBBBYTES);
 	thread->tagIdx = 0;
 	thread->cacheRepeats = 0;
-	thread->loopMax = 0;
+	thread->loopEnd = 0;
 	thread->lastTick = 0;
 #ifdef DEBUG_LOGGING
 	char filebuf[MAX_PATH];
@@ -513,7 +611,7 @@ this: determines whether a block should be instrumented
 dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 	instrlist_t *bb,	bool for_trace, bool translating,	void **user_data)
 {
-	char lineStr[MAXDISLEN];
+	
 	thread_id_t tid = dr_get_thread_id(drcontext);
 	uint threadMod = threadModArr[tid];
 	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(drcontext, traceClientptr->tls_idx);
@@ -521,27 +619,26 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 	char *BBBuf = thread->BBBuf;
 	instr_t *firstIns = instrlist_first_app(bb);
 	app_pc firstiPC = instr_get_app_pc(firstIns);
+	bool isInstrumented = false;
+	int mno = -1;
+		uint bufIdx = 0;
+	UINT64 blockID_count = dr_get_random_value(INT_MAX) & 0xffff;
 
 	#ifdef DEBUG_LOGGING
 	dr_fprintf(dbgfile,"basic block head: %lx\n",firstiPC);
 	#endif
 
-	bool isInstrumented = false;
-	int mno = -1;
-
-	uint bufIdx = 0;
-	UINT32 blockID_count = dr_get_random_value(INT_MAX) & 0xffff;
-
-	//might do better with dr_lookup_module but it causes error :( 
-	//					 + dr_free_module_data(exe_data);
-	//need to know where this code is, compare with module list
-
-	if (//in same module as last BB for this thread
+	/*
+	might do better with dr_lookup_module but it causes error :( 
+						 + dr_free_module_data(exe_data);
+	need to know where this code is, compare with module list
+	*/
+	//in same module as last BB looked at for this thread
+	if (
 		(firstiPC >= traceClientptr->modStarts.at(threadMod)) && (firstiPC <= traceClientptr->modEnds.at(threadMod))
 		)
 	{
 		isInstrumented = traceClientptr->includedModules.at(threadMod);
-		mno = threadMod;
 		bufIdx = dr_snprintf(BBBuf, 512, "B@%x@%d@%d@%x", firstiPC, threadMod, isInstrumented, blockID_count);
 	}
 	else
@@ -559,8 +656,9 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 			break;
 		}
 
+		//block not found in known module address allocations
 		//this is near enough untested and i make no guarantees about its robustness
-		//external libraries creating code outside the initial ranges will probably cause huge problems
+		//external libraries doing this will probably cause huge problems
 		if (mno >= traceClientptr->numMods)
 		{	
 			//failed to find. self modifying code?
@@ -591,21 +689,19 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 		}
 	}
 
-	
+	//no instrumentation done on external code, just report it exists and leave
 	if(!isInstrumented) 
 	{
 		BBBuf[bufIdx] = 0;
-		BLOCKDATA *bb_u_d = 0;
-		traceClientptr->write_sync_bb(BBBuf, bufIdx);
+		traceClientptr->write_sync_bb(BBBuf, bufIdx);	//this used to be needed... might not be now
 		return DR_EMIT_DEFAULT;
 	}
 
-	BLOCKDATA *bb_u_d = (BLOCKDATA *)logged_memalloc(sizeof(BLOCKDATA));
-	bb_u_d->appc = firstiPC; //tag not always == rip
-
+	//here we record all the opcodes in each instruction in the block and tell the visualiser about them
 	unsigned instructionCount = 0;
 	int lineIdx = 0, ilen, opcIdx;
-	
+
+	char *blockBuffer = traceClientptr->lineStr;
 	//opcodes for each instruction
 	for (instr_t *ins = firstIns; ins != NULL; ins = instr_get_next(ins)) 
 	{
@@ -613,31 +709,38 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 		dr_fprintf(dbgfile,"\t instrumented block instruction: %lx\n",instr_get_app_pc(ins));
 		#endif
 		++instructionCount;
-		lineIdx = dr_snprintf(lineStr + lineIdx, 1, "@");
+		lineIdx = dr_snprintf(blockBuffer + lineIdx, 1, "@");
 
 		ilen = instr_length(drcontext, ins);
 		for (opcIdx = 0; opcIdx < ilen; ++opcIdx)
 		{
-			lineIdx += dr_snprintf(lineStr + lineIdx, MAXDISLEN - lineIdx, "%02x", instr_get_raw_byte(ins, opcIdx));
+			lineIdx += dr_snprintf(blockBuffer + lineIdx, MAXDISLEN - lineIdx, "%02x", instr_get_raw_byte(ins, opcIdx));
 		}
 
-		bufIdx += dr_snprintf(BBBuf + bufIdx, lineIdx, "%s", lineStr);
-		DR_ASSERT_MSG(bufIdx < MAXBBBYTES, "[drgat]BB string larger than MAXBBBYTES!");
+		bufIdx += dr_snprintf(BBBuf + bufIdx, lineIdx, "%s", blockBuffer);
+		DR_ASSERT_MSG(bufIdx < MAXBBBYTES, "[drgat]FATAL: BB string larger than MAXBBBYTES!");
 	}
-	bb_u_d->blockID_numins = (blockID_count << 16)+instructionCount;
+
+	BLOCKDATA *bb_u_d = (BLOCKDATA *)logged_memalloc(sizeof(BLOCKDATA));
+	bb_u_d->appc = firstiPC;
+	bb_u_d->blockID_numins = (blockID_count << 32)+instructionCount;
 
 	BBBuf[bufIdx] = 0;
-	traceClientptr->write_sync_bb(BBBuf, bufIdx);
+	traceClientptr->write_sync_bb(BBBuf, bufIdx); //send to basic block handler thread
 
+
+	//finally we instrument the code to tell the trace handler thread each time the block executes
 	instr_t *lasti = instrlist_last_app(bb);
 	
-	//finally add appropriate analysis code to the block terminator
+	char traceType = traceClientptr->processingMode;
+
+	//add appropriate flow control processing code to the block terminator
 	if (instr_is_cbr(lasti))
-		dr_insert_cbr_instrumentation_ex(drcontext, bb, lasti, (void*)at_cbr, OPND_CREATE_INT32(bb_u_d));
+		dr_insert_cbr_instrumentation_ex(drcontext, bb, lasti, instrumentationTable[traceType][AT_CBR], OPND_CREATE_INT32(bb_u_d));
 	else 
 	{
-		//the other instrumentation methods don't allow passing of a user argument
-		//so we have to transfer it via spill slots instead
+		//the other instruction instrumentation calls don't allow passing of a user argument
+		//we have to transfer pointer to block metadata using a spill slot (2) instead
 		dr_save_reg(drcontext, bb, lasti, DR_REG_XAX, SPILL_SLOT_1);
 		instr_t *in = INSTR_CREATE_mov_imm(drcontext, opnd_create_reg(DR_REG_XAX), OPND_CREATE_INT32(bb_u_d));
 		instrlist_meta_preinsert(bb,lasti,in);
@@ -645,21 +748,16 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 		dr_restore_reg(drcontext,bb,lasti,DR_REG_XAX,SPILL_SLOT_1);
 
 		if (instr_is_ubr(lasti))
-			dr_insert_ubr_instrumentation(drcontext, bb, lasti, (void*)at_ubr);
-		
+			dr_insert_ubr_instrumentation(drcontext, bb, lasti, instrumentationTable[traceType][AT_UBR]);
 		//order is important here as far calls are hit by this and instr_is_call
 		else if(instr_is_mbr(lasti))
-			dr_insert_mbr_instrumentation(drcontext, bb, lasti, (app_pc)at_mbr,SPILL_SLOT_1);
+			dr_insert_mbr_instrumentation(drcontext, bb, lasti, instrumentationTable[traceType][AT_MBR],SPILL_SLOT_1);
                         
 		else if (instr_is_call(lasti))
-			dr_insert_call_instrumentation(drcontext, bb, lasti, (void*)at_call);
+			dr_insert_call_instrumentation(drcontext, bb, lasti, instrumentationTable[traceType][AT_CALL]);
 
 		else
-			{
-			std::stringstream badterm;
-			badterm << "[drgat]Unhandled block terminator: " << std::hex << instr_get_opcode(lasti);
-			DR_ASSERT_MSG(0,badterm.str().c_str());
-			}
+			dr_printf("[drgat]PROBABLY FATAL: Unhandled block terminator. Memory corruption in target?\n");
 	}
 	return DR_EMIT_DEFAULT;
 }

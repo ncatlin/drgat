@@ -30,12 +30,12 @@ typedef struct {
 	app_pc sourceInstruction;
 	app_pc tagCache[TAGCACHESIZE];
 	app_pc targetAddresses[TAGCACHESIZE];
-	UINT32 blockID_counts[TAGCACHESIZE];
+	UINT64 blockID_counts[TAGCACHESIZE];
 	char stringbuf[STRINGBUFMAX];
 
 	uint cacheRepeats;
 	int tagIdx;
-	int loopMax;
+	int loopEnd;
 
 	//result of last call to gettickcount
 	DWORD64 lastTick;

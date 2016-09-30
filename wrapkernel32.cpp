@@ -93,12 +93,21 @@ static void wrapGetmodulefilenamea(void *wrapcxt, OUT void **user_data)
 		thread->sourceInstruction, mod);
 }
 
-static void wrapCreatefilea(void *wrapcxt, OUT void **user_data)
+static void wrapCreatefileA(void *wrapcxt, OUT void **user_data)
 {
 	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
 	LPCTSTR filename = (LPCTSTR)drwrap_get_arg(wrapcxt, 0);
 	b64_string_arg(filename, thread->stringbuf);
-	dr_fprintf(thread->f, "ARG,%d,%x,%x,E,%s@", 0, drwrap_get_func(wrapcxt), thread->sourceInstruction, thread->stringbuf);
+	dr_fprintf(thread->f, "ARG,%d,%x,%x,E,1,%s@", 0, drwrap_get_func(wrapcxt), thread->sourceInstruction, thread->stringbuf);
+}
+
+static void wrapCreatefileW(void *wrapcxt, OUT void **user_data)
+{
+	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+	LPCWSTR filename = (LPCWSTR)drwrap_get_arg(wrapcxt, 0);
+	
+	b64_wstring_arg(filename, thread->stringbuf);
+	dr_fprintf(thread->f, "ARG,%d,%x,%x,E,1,%s@", 0, drwrap_get_func(wrapcxt), thread->sourceInstruction, thread->stringbuf);
 }
 
 static void wrapCreateprocessinternalw(void *wrapcxt, OUT void **user_data)
@@ -238,7 +247,11 @@ void wrap_kernel32(module_handle_t handle)
 		
 		towrap = (app_pc)dr_get_proc_address(handle, "CreateFileA");
 		if (towrap != NULL) 
-			drwrap_wrap(towrap, wrapCreatefilea, NULL);
+			drwrap_wrap(towrap, wrapCreatefileA, NULL);
+		
+		towrap = (app_pc)dr_get_proc_address(handle, "CreateFileW");
+		if (towrap != NULL) 
+			drwrap_wrap(towrap, wrapCreatefileW, NULL);
 		
 		towrap = (app_pc)dr_get_proc_address(handle, "CreateProcessInternalW");
 		if (towrap != NULL) 

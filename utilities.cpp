@@ -2,9 +2,12 @@
 #include "headers\utilities.h"
 #include "headers\b64encode.h"
 
+//doing this for lots of big dll's is a lot of work
 bool symCB(const char *name, size_t modoffs, callback_data *cbd)
 {
-	traceClientptr->write_sync_mod("s!@%d@%s@%x@", cbd->modnum, name, modoffs);
+	char b64sym[STRINGBUFMAX];
+	b64_string_arg(name,b64sym); //@'s in symbols will wreck parsing
+	traceClientptr->write_sync_mod("s!@%d@%s@%x@", cbd->modnum, b64sym, modoffs);
 	return TRUE;
 }
 
@@ -80,7 +83,7 @@ void printTagCache(THREAD_STATE *thread)
 	//first print out any complete loops
 	if (thread->cacheRepeats)
 	{
-		cacheEnd = thread->loopMax;
+		cacheEnd = thread->loopEnd;
 
 		byteswritten += dr_fprintf(thread->f, "RS%d@", thread->cacheRepeats);
 		for (int i = 0; i < cacheEnd; ++i)
@@ -88,7 +91,7 @@ void printTagCache(THREAD_STATE *thread)
 			//dr_printf("LOOP CACHEDUMP %d its of %d blocks block:%lx targ:%lx\n",
 			//	thread->cacheRepeats,cacheEnd,thread->tagCache[i],thread->targetAddresses[i]);
 
-			byteswritten += dr_fprintf(thread->f, "j%x,%x,%x@",
+			byteswritten += dr_fprintf(thread->f, "j%x,%x,%llx@",
 				thread->tagCache[i],thread->targetAddresses[i], thread->blockID_counts[i]);
 		}
 		byteswritten += dr_fprintf(thread->f, "RE@");
@@ -99,7 +102,7 @@ void printTagCache(THREAD_STATE *thread)
 	{
 		//dr_printf("STD CACHEDUMP of %d blocks block:%lx targ:%lx\n",
 		//		cacheEnd,thread->tagCache[i],thread->targetAddresses[i]);
-		byteswritten += dr_fprintf(thread->f, "j%x,%x,%x@",	thread->tagCache[i],thread->targetAddresses[i], thread->blockID_counts[i]);
+		byteswritten += dr_fprintf(thread->f, "j%x,%x,%llx@",	thread->tagCache[i],thread->targetAddresses[i], thread->blockID_counts[i]);
 	}
 
 	//pipe closed, rgat probably closed too
@@ -111,6 +114,6 @@ void printTagCache(THREAD_STATE *thread)
 	
 	dr_flush_file(thread->f);
 	thread->tagIdx = 0;
-	thread->loopMax = 0;
+	thread->loopEnd = 0;
 	thread->cacheRepeats = 0;
 }
