@@ -106,10 +106,10 @@ void printTagCache(THREAD_STATE *thread)
 	}
 
 	//pipe closed, rgat probably closed too
-	if ((int)byteswritten < 0)
+	if ((int)byteswritten <= 0 && (thread->tagIdx || thread->loopEnd))
 	{
 		dr_sleep(1500);
-		dr_exit_process(-1);
+		dr_abort();
 	}
 	
 	dr_flush_file(thread->f);

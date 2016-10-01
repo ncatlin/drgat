@@ -52,28 +52,36 @@ TRACECLIENT *traceClientptr;
 //quick and dirty way of reducing our time spent looking which module a given address belongs to
 uint threadModArr[MAXTHREADID];
 
+//write to the basic block handler thread
 void
 TRACECLIENT::write_sync_bb(char* buf, uint strsize)
 {
-	dr_write_file(bbpipe, buf, strsize); //fprintf truncates to internal buffer size!
+	if(!dr_write_file(bbpipe, buf, strsize)) //fprintf truncates to internal buffer size!
+		dr_abort();
+
 	dr_flush_file(bbpipe);
 }
 
+//write to the module_handler_thead
 void
 TRACECLIENT::write_sync_mod(char *logText, ...)
 {
 	
-	char str[1024];
-	uint total = 0;
+	char str[MAXMODMSGSIZE];
+	ssize_t total = 0;
 	va_list args;
 
 	va_start(args, logText);
-	total += dr_vsnprintf(str, 1024, logText, args);
+	total += dr_vsnprintf(str, MAXMODMSGSIZE, logText, args);
 	va_end(args);
+	DR_ASSERT_MSG(total,str);
 	str[total] = 0;
 
-	DR_ASSERT_MSG(total < 1024, "w_s_m buf too small");
-	dr_fprintf(modpipe, "%s", str);
+	DR_ASSERT_MSG(total < MAXMODMSGSIZE, "MAXMODMSGSIZE too small");
+	total = dr_fprintf(modpipe, "%s", str);
+	if (total <= 0)
+		dr_abort();
+
 	dr_flush_file(modpipe);
 }
 
@@ -729,10 +737,10 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 	BBBuf[bufIdx] = 0;
 	traceClientptr->write_sync_bb(BBBuf, bufIdx); //send to basic block handler thread
 
-
 	//finally we instrument the code to tell the trace handler thread each time the block executes
 	instr_t *lasti = instrlist_last_app(bb);
 	
+	//debug mode or optimised
 	char traceType = traceClientptr->processingMode;
 
 	//add appropriate flow control processing code to the block terminator
