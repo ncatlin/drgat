@@ -617,6 +617,7 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(drcontext, traceClientptr->tls_idx);
 	
 	char *BBBuf = thread->BBBuf;
+
 	instr_t *firstIns = instrlist_first_app(bb);
 	app_pc firstiPC = instr_get_app_pc(firstIns);
 	bool isInstrumented = false;
@@ -701,7 +702,7 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 	unsigned instructionCount = 0;
 	int lineIdx = 0, ilen, opcIdx;
 
-	char *blockBuffer = traceClientptr->lineStr;
+	char *blockBuffer = thread->opBuffer;
 	//opcodes for each instruction
 	for (instr_t *ins = firstIns; ins != NULL; ins = instr_get_next(ins)) 
 	{
@@ -714,7 +715,7 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 		ilen = instr_length(drcontext, ins);
 		for (opcIdx = 0; opcIdx < ilen; ++opcIdx)
 		{
-			lineIdx += dr_snprintf(blockBuffer + lineIdx, MAXDISLEN - lineIdx, "%02x", instr_get_raw_byte(ins, opcIdx));
+			lineIdx += dr_snprintf(blockBuffer + lineIdx, MAXOPCODESLEN - lineIdx, "%02x", instr_get_raw_byte(ins, opcIdx));
 		}
 
 		bufIdx += dr_snprintf(BBBuf + bufIdx, lineIdx, "%s", blockBuffer);

@@ -36,7 +36,6 @@ typedef struct {
 
 
 #define MAXINCLUDES 128
-#define MAXDISLEN 4096 
 
 //todo: put stuff protected/private
 class TRACECLIENT {
@@ -50,7 +49,6 @@ public:
 	 bool hidetime;
 	 //send tags to visualiser as soon as block executed
 	 char processingMode;
-	 char lineStr[MAXDISLEN];
 
 	 TRACECLIENT(std::string path)
 	 {
@@ -81,8 +79,7 @@ public:
 	 std::vector<app_pc> modStarts; //module start addresses
 	 std::vector<app_pc> modEnds; //module end addresses
 
-	void *modMutx, *parentMutx;
-	void *allocMutx;
+	void *modMutx, *parentMutx, *allocMutx;
 
 	file_t modpipe;
 	file_t bbpipe;
@@ -95,4 +92,5 @@ public:
 	void write_sync_bb(char* buf, uint strsize);
 	void write_sync_mod(char *logText, ...);
 };
+
 extern TRACECLIENT *traceClientptr;

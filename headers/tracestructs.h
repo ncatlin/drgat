@@ -4,6 +4,7 @@
 #define MAXMODULES 255
 #define MAXBBBYTES 1024*40
 #define TAGCACHESIZE 5256
+#define MAXOPCODESLEN 4096 
 
 #define UNKNOWN 91999
 #define STRINGBUFMAX 512
@@ -26,16 +27,18 @@ typedef struct {
 	file_t dbgfile;
 	#endif
 
-	char *BBBuf; //per thread basic block buffer
 	app_pc sourceInstruction;
 	app_pc tagCache[TAGCACHESIZE];
 	app_pc targetAddresses[TAGCACHESIZE];
 	UINT64 blockID_counts[TAGCACHESIZE];
-	char stringbuf[STRINGBUFMAX];
+
+	char *BBBuf; //per thread basic block buffer
+	char stringbuf[STRINGBUFMAX]; //stores b64 encoded argument strings
+	char opBuffer[MAXOPCODESLEN]; //stores opcodes during block creation
 
 	uint cacheRepeats;
-	int tagIdx;
-	int loopEnd;
+	unsigned int tagIdx;
+	unsigned int loopEnd;
 
 	//result of last call to gettickcount
 	DWORD64 lastTick;

@@ -28,14 +28,14 @@ void windows_event_module_load(void *drcontext, const module_data_t *info, bool 
 		if(!traceClientptr->excludedModuleStrings.count(path)) 
 			isInstrumented = true;
 	}
-	else
+	else 
 	{
 		if(traceClientptr->includedModuleStrings.count(path)) 
 			isInstrumented = true;
 	}
 
 	int modindex = traceClientptr->numMods++;
-		char b64path[STRINGBUFMAX];
+	char b64path[STRINGBUFMAX];
 	b64_string_arg(info->full_path,b64path);
 	traceClientptr->write_sync_mod("mn@%s@%d@%lx@%lx@%x", 
 		b64path, modindex, info->start, info->end, !traceClientptr->includedModules[modindex]);
