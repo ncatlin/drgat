@@ -90,7 +90,10 @@ static bool
 event_exception(void *drcontext, dr_exception_t *excpt)
 {
 	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
-	dr_fprintf(thread->f, "EXC,%x,%x@", excpt->mcontext->eip, excpt->record->ExceptionCode);
+	printTagCache(thread);
+
+	dr_fprintf(thread->f, "EXC,%lx,%lx,%d@", excpt->record->ExceptionAddress, excpt->record->ExceptionCode, excpt->record->ExceptionFlags);
+	
 	return true;
 }
 
@@ -525,7 +528,7 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 	dr_register_exit_event(event_exit);
 	drmgr_register_thread_init_event(event_thread_init);
 	drmgr_register_thread_exit_event(event_thread_exit);
-		drmgr_register_exception_event(event_exception);
+	drmgr_register_exception_event(event_exception);
 	drmgr_register_bb_instrumentation_event(event_bb_analysis, NULL, NULL);
 
 	#ifdef WINDOWS
