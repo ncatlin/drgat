@@ -20,6 +20,48 @@ typedef struct {
 
 static int glob_pid;
 
+typedef unsigned long BLOCK_IDENTIFIER;
+typedef unsigned long long BLOCK_IDENTIFIER_COUNT;
+
+typedef std::pair<app_pc, BLOCK_IDENTIFIER> TARG_BLOCKID_PAIR;
+namespace std{
+    template <>
+    struct hash<TARG_BLOCKID_PAIR>
+    {
+        size_t operator()(TARG_BLOCKID_PAIR const & x) const
+        {
+            return (
+                (51 + std::hash<app_pc>()(x.first)) * 51
+                + std::hash<BLOCK_IDENTIFIER>()(x.second)
+            );
+        }
+    };
+}
+
+
+//passed to each basic block clean all 
+//so it can decide whether to print its address
+struct BLOCKDATA {
+	//constant block metadata
+	uint numInstructions;
+	app_pc appc; 
+	app_pc fallthrough;
+	BLOCK_IDENTIFIER_COUNT blockID_numins;
+	BLOCK_IDENTIFIER blockID;
+
+	//block metadata specific to each thread
+	//calling dr with -thread_private is essential because of this
+	app_pc lastTarget;
+	BLOCK_IDENTIFIER lastTargetID;
+	std::unordered_set<TARG_BLOCKID_PAIR> *targets;
+	unsigned long busyCounter;
+	bool unchained;
+	unsigned long unchainedRepeats;
+
+	thread_id_t dbgtid;
+
+};
+typedef std::unordered_map<app_pc, BLOCK_IDENTIFIER> BLOCKIDMAP;
 typedef struct {
 	file_t f; //trace pipe
 	thread_id_t tid;
@@ -31,11 +73,12 @@ typedef struct {
 	app_pc sourceInstruction;
 	app_pc tagCache[TAGCACHESIZE];
 	app_pc targetAddresses[TAGCACHESIZE];
-	UINT64 blockID_counts[TAGCACHESIZE];
+	BLOCK_IDENTIFIER_COUNT blockID_counts[TAGCACHESIZE];
 
 	char *BBBuf; //per thread basic block buffer
 	char stringbuf[STRINGBUFMAX]; //stores b64 encoded argument strings
 	char opBuffer[MAXOPCODESLEN]; //stores opcodes during block creation
+	char BXbuffer[TAGCACHESIZE]; //buffer unchaining data for output
 
 	uint cacheRepeats;
 	unsigned int tagIdx;
@@ -43,23 +86,28 @@ typedef struct {
 
 	//result of last call to gettickcount
 	DWORD64 lastTick;
+
+	//block activity tracker
+	unsigned long busyCounter;
+
+	//any blocks currently unchained?
+	bool unchainedExist;
+
+	BLOCKDATA *lastBlock;
+	//THREAD_BLOCK_DATA* lastBlock_tracking;
+
+	BLOCK_IDENTIFIER lastBlock_expected_targID;
+	
+
+	std::vector<void *> unchainedBlocks;
+
+	BLOCKIDMAP lastestBlockIDs;
+	bool unsatisfiedBlockIDs;
+	app_pc unsatisfiedBlockIDAddress;
+	std::unordered_map<app_pc, std::vector<BLOCKDATA *>> unsatisfiableBlockIDs;
+
 	
 } THREAD_STATE;
 
 
 
-typedef struct _UNICODE_STRING {
-	USHORT Length;
-	USHORT MaximumLength;
-	_Field_size_bytes_part_(MaximumLength, Length) PWCH   Buffer;
-} UNICODE_STRING;
-typedef UNICODE_STRING *PUNICODE_STRING;
-typedef struct _OBJECT_ATTRIBUTES {
-	ULONG Length;
-	HANDLE RootDirectory;
-	PUNICODE_STRING ObjectName;
-	ULONG Attributes;
-	PVOID SecurityDescriptor;        // Points to type SECURITY_DESCRIPTOR
-	PVOID SecurityQualityOfService;  // Points to type SECURITY_QUALITY_OF_SERVICE
-} OBJECT_ATTRIBUTES;
-typedef OBJECT_ATTRIBUTES *POBJECT_ATTRIBUTES;

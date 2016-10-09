@@ -86,3 +86,4 @@ dr_fprintf(thread->f, "In wrapGettickcount\n");
 BYTE *p = (BYTE*)drwrap_get_arg(wrapcxt, 3);
 dr_fprintf(thread->f, "ARG@%d@%x@%x@%s\n", 3, drwrap_get_func(wrapcxt), thread->sourceInstruction, data);
 }*/
+

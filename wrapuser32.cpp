@@ -12,7 +12,7 @@ static void wrapCharlowerA(void *wrapcxt, OUT void **user_data)
 	else
 		b64_string_arg(arg, thread->stringbuf);
 
-	dr_fprintf(thread->f, "ARG,%d,%x,%x,E,1,%s@", 0, drwrap_get_func(wrapcxt), thread->sourceInstruction, thread->stringbuf);
+	dr_fprintf(thread->f, "ARG,%d,%x,%x,E,1,%s@", 0, drwrap_get_func(wrapcxt), thread->lastBlock->appc, thread->stringbuf);
 }
 
 void wrap_user32(module_handle_t handle)

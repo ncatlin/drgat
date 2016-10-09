@@ -48,16 +48,26 @@ void *instrumentationTable[2][4];
 file_t dbgfile;
 #endif
 
+unsigned long memcount = 0;
+unsigned long tmemcount = 0;
+extern unsigned long *globmemcount = &memcount;
+extern unsigned long * threadmemcount = &tmemcount;
+std::vector<std::unordered_set<TARG_BLOCKID_PAIR>*> setAddrs;
+
 TRACECLIENT *traceClientptr;
+
 //quick and dirty way of reducing our time spent looking which module a given address belongs to
-uint threadModArr[MAXTHREADID];
+std::unordered_map<unsigned int, unsigned int> threadModArr;
 
 //write to the basic block handler thread
 void
 TRACECLIENT::write_sync_bb(char* buf, uint strsize)
 {
 	if(!dr_write_file(bbpipe, buf, strsize)) //fprintf truncates to internal buffer size!
+	{
+		dr_printf("[drgat]Abort called in write_sync_bb\n");
 		dr_abort();
+	}
 
 	dr_flush_file(bbpipe);
 }
@@ -66,21 +76,21 @@ TRACECLIENT::write_sync_bb(char* buf, uint strsize)
 void
 TRACECLIENT::write_sync_mod(char *logText, ...)
 {
-	
 	char str[MAXMODMSGSIZE];
 	ssize_t total = 0;
 	va_list args;
-
 	va_start(args, logText);
 	total += dr_vsnprintf(str, MAXMODMSGSIZE, logText, args);
 	va_end(args);
 	DR_ASSERT_MSG(total,str);
 	str[total] = 0;
-
 	DR_ASSERT_MSG(total < MAXMODMSGSIZE, "MAXMODMSGSIZE too small");
 	total = dr_fprintf(modpipe, "%s", str);
 	if (total <= 0)
+	{
+		dr_printf("[drgat]Abort called in write_sync_mod\n");
 		dr_abort();
+	}
 
 	dr_flush_file(modpipe);
 }
@@ -90,9 +100,14 @@ static bool
 event_exception(void *drcontext, dr_exception_t *excpt)
 {
 	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
-	printTagCache(thread);
 
-	dr_fprintf(thread->f, "EXC,%lx,%lx,%d@", excpt->record->ExceptionAddress, excpt->record->ExceptionCode, excpt->record->ExceptionFlags);
+	#ifdef DEBUG_LOGGING
+	dr_fprintf(thread->dbgfile,"In exception event\n");
+	dr_flush_file(thread->dbgfile);
+	#endif
+
+	printTagCache(thread);
+	dr_fprintf(thread->f, "EXC,%lx,%lx,%lx@", excpt->record->ExceptionAddress, excpt->record->ExceptionCode, excpt->record->ExceptionFlags);
 	
 	return true;
 }
@@ -103,7 +118,8 @@ void TRACECLIENT::load_modinclude_strings(char *commaSepPaths)
 	std::string pathString(commaSepPaths);
 	std::stringstream ss(pathString);
 
-	while (includedModuleStrings.size() < MAXINCLUDES) {
+	while (includedModuleStrings.size() < MAXINCLUDES) 
+	{
 		std::string path;
 		std::getline(ss, path, ',');
 		if (path.empty()) return;
@@ -186,27 +202,177 @@ void processArgs(const char **ask_argv, int ask_argc, TRACECLIENT * client)
 }
 
 /*
-basic loop compression happens here
-if not in a loop and we jump back, we are setting cache[0] to start of loop
-next iteration we notice the target is cache[0] and start loop increments
+uses thread and block activity counters to decide when to unchain blocks on a sliding scale
+looks something like this:
+
+b1 b2 b3 b4 b5
+1   1  1  1 
+       2  2 
+       3  3 
+2   2  2  2 
+       3  3 
+	   4  4 
+3   3  3  3 
+       4  4 
+	   5  5
+	        1
+1   1  1  1
+	   
 */
-inline void process_block(app_pc pc, app_pc target, BLOCKDATA *block_data)
+
+
+inline void process_block_chain(app_pc pc, app_pc target, BLOCKDATA *block_data)
 {
 	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
-	thread->sourceInstruction = pc;
-	int tagIdx = thread->tagIdx++; //do increment here to avoid extra read
-	
+
 	#ifdef DEBUG_LOGGING
-	dr_fprintf(thread->dbgfile,"process_block insaddr 0x%lx bb [tagidx %d addr 0x%lx targ 0x%lx]\n",pc,tagIdx,block_data->appc,target);
+	dr_fprintf(thread->dbgfile,"<>process_block_chain: %d, block: %lx, blockbusy:%d, threadbusy:%d\n",
+		thread->tid, block_data->appc, block_data->busyCounter, thread->busyCounter);
+	dr_flush_file(thread->dbgfile);
 	#endif
 
+	//thread in an area of high workload above deinstrumentation threshold
+	if (thread->unchainedExist)
+	{
+
+		//this block (or its target) is new to the work area
+		//rechain everything (start processing slowly)
+		if((block_data->busyCounter == 0) || (thread->lastestBlockIDs.count(target) == 0))
+		{
+			#ifdef DEBUG_LOGGING
+			if(block_data->busyCounter == 0) 
+				dr_fprintf(thread->dbgfile,"chain reattached by 0 activity block %lx, caller had executed %d times\n",
+				block_data->appc, thread->lastBlock->unchainedRepeats);
+			if (thread->lastestBlockIDs.count(target) == 0)
+				dr_fprintf(thread->dbgfile,"chain reattached by new target %lx, caller had executed %d times\n",
+				target, thread->lastBlock->unchainedRepeats);
+			#endif
+
+			printTagCache(thread);
+
+			std::vector<void *>::iterator unchainedIt = thread->unchainedBlocks.begin();
+			for (; unchainedIt != thread->unchainedBlocks.end(); ++unchainedIt)
+			{
+				BLOCKDATA *chainedBlock = ((BLOCKDATA *)*unchainedIt);
+				std::unordered_set<TARG_BLOCKID_PAIR>::iterator targetsIt = chainedBlock->targets->begin();
+
+				/*
+				std::stringstream outpt;
+				outpt << "BX,"<<std::hex<<(unsigned long)chainedBlock->appc<<","<<chainedBlock->blockID_numins<<","<<std::hex<<chainedBlock->unchainedRepeats;
+				for(; targetsIt != chainedBlock->targets->end(); ++targetsIt)
+					outpt<<","<<std::hex<<(unsigned long)targetsIt->first<<","<<targetsIt->second;
+				dr_fprintf(thread->f,"%s@",outpt.str().c_str());
+				*/
+				
+				//not noticing any significant differences in speed between them but this avoids mem allocations
+				unsigned int outputcount = 0;
+				outputcount += dr_snprintf(thread->BXbuffer,TAGCACHESIZE, "BX,%lx,%llx,%lx",chainedBlock->appc,chainedBlock->blockID_numins,chainedBlock->unchainedRepeats);
+				for(; targetsIt != chainedBlock->targets->end(); ++targetsIt)
+					outputcount += dr_snprintf(thread->BXbuffer+outputcount,TAGCACHESIZE-outputcount,",%lx,%lx",targetsIt->first, targetsIt->second);
+				dr_fprintf(thread->f,"%s@",thread->BXbuffer);
+				
+				
+				dr_flush_file(thread->f);
+
+				chainedBlock->unchained = false;
+				chainedBlock->busyCounter = 0;
+			}
+			thread->unchainedBlocks.clear();
+			thread->unchainedExist = false;
+
+			//make link between unchained nodes and new appearance
+			//this also inserts current block onto graph
+			dr_fprintf(thread->f, "UL,%lx,%llx,%lx,%llx@", thread->lastBlock->appc,thread->lastBlock->blockID_numins, 
+				block_data->appc, block_data->blockID_numins);
+			dr_flush_file(thread->f);
+			thread->busyCounter = ++block_data->busyCounter;
+		}
+
+		//in an area of high workload, this block is part of it so unchain it too
+		else
+		{
+			printTagCache(thread); //not sure this ever does anything
+
+			block_data->unchainedRepeats = 1;
+			block_data->unchained = true;
+			block_data->lastTarget = target;
+
+			BLOCK_IDENTIFIER targBlockID = thread->lastestBlockIDs.at(target);
+			block_data->lastTargetID = targBlockID;
+			block_data->targets->clear();
+			block_data->targets->insert(std::make_pair(target, targBlockID));
+
+			thread->unchainedBlocks.push_back((void *) block_data);
+			thread->lastBlock = block_data;
+			thread->lastBlock_expected_targID = targBlockID;
+		}
+		return;
+	}
+
+	//if here then thread is below unchaining threshold
+
+	//area of increased activity, increase block activity counter
+	if ((block_data->busyCounter == thread->busyCounter) || 
+		(block_data->busyCounter == (thread->busyCounter-1)))
+	{
+
+		//increase thread activity counter if all blocks aside from from this one
+		if (++block_data->busyCounter > thread->busyCounter)
+			++thread->busyCounter;
+
+		if(block_data->busyCounter >= DEINSTRUMENTATION_LIMIT)
+		{
+			#ifdef DEBUG_LOGGING
+			dr_fprintf(thread->dbgfile,"Deinstrumentation limit reached at block %lx, unchaining\n",block_data->appc);
+			#endif
+
+			printTagCache(thread);
+
+			block_data->unchainedRepeats = 1;
+			block_data->unchained = true;
+			block_data->lastTarget = target;
+
+			BLOCK_IDENTIFIER targBlockID;
+			BLOCKIDMAP::iterator blockIDIt = thread->lastestBlockIDs.find(target);
+			if(blockIDIt == thread->lastestBlockIDs.end())
+			{
+				//DR_ASSERT_MSG(!thread->unsatisfiedBlockIDs, "OVERWRITE UNSATISFIED BLOCK!");
+				thread->unsatisfiedBlockIDs = true;
+				thread->unsatisfiedBlockIDAddress = target;
+				targBlockID = 0;
+			}
+			else
+				targBlockID = blockIDIt->second;
+
+			block_data->lastTargetID = targBlockID;
+			block_data->targets->clear();
+			block_data->targets->insert(std::make_pair(target, targBlockID));
+			thread->unchainedBlocks.push_back(((void *) block_data));
+			thread->unchainedExist = true;
+			thread->lastBlock = block_data;
+			thread->lastBlock_expected_targID = targBlockID;
+			return;
+		}
+	}
+	
+	else //block busier than recent thread actvity - lower block activity to match
+		if (block_data->busyCounter > thread->busyCounter)
+		block_data->busyCounter = thread->busyCounter; 
+	else 
+		//active block with less activity than thread - lower thread activity to match
+		thread->busyCounter = ++block_data->busyCounter;
+
+	thread->sourceInstruction = pc; //not set in unchained --- hasn't been a problem yet
+	thread->lastBlock = block_data;
+
+	unsigned int tagIdx = thread->tagIdx++;
 	if (tagIdx > TAGCACHESIZE-1)
 	{
 		printTagCache(thread);
 		tagIdx = 0;
 	}
 
-	if (!thread->loopEnd)
+	if (!thread->cacheRepeats)
 	{
 		//not in loop, record new block info in cache
 		thread->tagCache[tagIdx] = block_data->appc;
@@ -224,13 +390,15 @@ inline void process_block(app_pc pc, app_pc target, BLOCKDATA *block_data)
 		
 		if (thread->tagCache[0] == target)//back to start of cache
 		{
-			#ifdef DEBUG_LOGGING
-			dr_fprintf(thread->dbgfile,"\ttarg 0x%lx == cache0 0x%lx -> starting loop",target, thread->tagCache[0]);
-			#endif
 			//record cache as first iteration of a loop
 			thread->loopEnd = tagIdx;
 			thread->cacheRepeats++;
 			thread->tagIdx = 0;
+
+			#ifdef DEBUG_LOGGING
+			dr_fprintf(thread->dbgfile,"starting new loop of %d blocks from %lx (cachrepeats set to %d)",thread->loopEnd, target,
+				thread->cacheRepeats);
+			#endif
 		}
 		else
 		{
@@ -247,6 +415,7 @@ inline void process_block(app_pc pc, app_pc target, BLOCKDATA *block_data)
 
 	if (tagIdx == thread->loopEnd) //end of loop
 	{
+
 		#ifdef DEBUG_LOGGING
 		dr_fprintf(thread->dbgfile,"\tend of loop idx %d, checking targ 0x%lx! =  cache[0] 0x%lx\n",tagIdx,
 					target,thread->tagCache[0]);
@@ -258,6 +427,10 @@ inline void process_block(app_pc pc, app_pc target, BLOCKDATA *block_data)
 			//record another iteration of cache
 			++thread->cacheRepeats;
 			thread->tagIdx = 0;
+
+			#ifdef DEBUG_LOGGING
+			dr_fprintf(thread->dbgfile,"\tback to start of loop head %lx, loop now %d iterations\n",target,thread->cacheRepeats);
+			#endif
 			return;
 		}
 			
@@ -282,6 +455,7 @@ inline void process_block(app_pc pc, app_pc target, BLOCKDATA *block_data)
 		dr_fprintf(thread->dbgfile,"\tloop mismatch dumpcache idx %d, 0x%lx!=0x%lx,numins:%d, 0x%lx!=0x%lx\n",tagIdx,
 					thread->tagCache[tagIdx],(uint)block_data->appc,	
 					block_data->numInstructions,thread->targetAddresses[tagIdx], target);
+		dr_flush_file(thread->dbgfile);
 		#endif
 
 		//they don't match! print loops up til now + progress on current loop
@@ -294,112 +468,259 @@ inline void process_block(app_pc pc, app_pc target, BLOCKDATA *block_data)
 		thread->targetAddresses[tagIdx] = target;
 		thread->tagIdx = 1;
 	}
+
 }
 
-
-static void at_cbr(app_pc pc, app_pc target, app_pc fallthrough, int taken, void *u_d)
+static void at_cbr(app_pc pc, app_pc target, app_pc fallthrough, int taken, void *blk_d)
 {
-	#ifdef DEBUG_LOGGING
-	BLOCKDATA *block_data = (BLOCKDATA *)u_d;
+
+	app_pc actualTarget = taken ? target : fallthrough;
 	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+	BLOCKDATA * block_data = ((BLOCKDATA *)blk_d);
+
+	#ifdef DEBUG_LOGGING
 	dr_fprintf(thread->dbgfile,"at_cbr pc 0x%lx target 0x%lx blockhead 0x%lx fallthroughaddr:0x%lx taken:%d\n",
 		pc,target,block_data->appc,fallthrough,taken);
+	dr_flush_file(thread->dbgfile);
 	#endif
 
-	if (taken)
-		process_block(pc, target, (BLOCKDATA *)u_d);
-	else
-		process_block(pc, fallthrough, (BLOCKDATA *)u_d);
+	if (!block_data->unchained)
+	{
+		process_block_chain(pc, actualTarget, block_data);
+		return;
+	}
+
+	//increase count of executions for this block
+	++block_data->unchainedRepeats;
+		
+	//check to see if we arrived at the expected target
+	if (block_data->blockID != thread->lastBlock_expected_targID)
+	{
+		//nope, add a new target to previous block so it can be added to graph
+		thread->lastBlock->targets->insert(std::make_pair(block_data->appc, block_data->blockID));
+		thread->lastBlock->lastTargetID = block_data->blockID;
+	}
+
+	//update state so next block can do the same check
+	thread->lastBlock_expected_targID = block_data->lastTargetID;
+
+	//check if the next target is the one block expects
+	//if not then update the expected target and add it to target list
+	//this avoids expensive set lookup every execution
+	if (actualTarget != block_data->lastTarget)
+	{
+		block_data->lastTarget = actualTarget;
+
+		BLOCKIDMAP::iterator latestIDIt = thread->lastestBlockIDs.find(actualTarget);
+		//if not found then BB hasn't been created yet. this causes value to be set when it is created
+		if (latestIDIt == thread->lastestBlockIDs.end())
+			{
+				thread->unsatisfiedBlockIDs = true;
+				thread->unsatisfiedBlockIDAddress = actualTarget;
+				block_data->lastTargetID = 0;
+			}
+		else
+			{
+				block_data->lastTargetID = latestIDIt->second;
+				block_data->targets->insert(std::make_pair(actualTarget, latestIDIt->second));
+			}
+	}
+
+	//update state so we know which member of unchained area executed an inactive block, if target is inactive
+	thread->lastBlock = block_data;
+
+	#ifdef DEBUG_LOGGING
+	dr_fprintf(thread->dbgfile,"cbr done targ->0x%lx\n",actualTarget);
+	dr_flush_file(thread->dbgfile);
+	#endif
 }
 
 
 static void at_ubr(app_pc pc, app_pc target)
 {
+
+	BLOCKDATA *block_data = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
+	
+
 	#ifdef DEBUG_LOGGING
-	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
-	dr_fprintf(thread->dbgfile,"at_ubr 0x%lx->0x%lx\n",pc,target);
+	THREAD_STATE *dbgthread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+	dr_fprintf(dbgthread->dbgfile,"at_ubr 0x%lx->0x%lx\n",pc,target);
+	dr_flush_file(dbgthread->dbgfile);
 	#endif
 
-	process_block(pc, target, (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2));
+	if (!block_data->unchained)
+	{
+		process_block_chain(pc, target, block_data);
+		return;
+	}
+
+	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+
+	++block_data->unchainedRepeats;
+		
+	//check to see if we arrived at the expected target
+	if (block_data->blockID != thread->lastBlock_expected_targID)
+	{
+		//nope, add a new target to previous block so it can be added to graph
+		thread->lastBlock->targets->insert(std::make_pair(block_data->appc, block_data->blockID));
+		thread->lastBlock->lastTargetID = block_data->blockID;
+	}
+
+	//update state so next block can do the same check
+	thread->lastBlock_expected_targID = block_data->lastTargetID;
+
+	//check if the next target is the one block expects
+	//if not then update the expected target and add it to target list
+	//this avoids expensive set lookup every execution
+	if (target != block_data->lastTarget)
+	{
+		block_data->lastTarget = target;
+		BLOCKIDMAP::iterator blockIDit = thread->lastestBlockIDs.find(target);
+		if (blockIDit != thread->lastestBlockIDs.end())
+		{
+			thread->unsatisfiedBlockIDs = true;
+			thread->unsatisfiedBlockIDAddress = target;
+			block_data->lastTargetID = 0;
+		}
+		else
+		{
+			block_data->lastTargetID = blockIDit->second;
+			block_data->targets->insert(std::make_pair(target, block_data->lastTargetID));
+		}	
+	}
+
+	//update state so drgat knows which member of unchained area executed an inactive block
+	thread->lastBlock = block_data;
+
+	#ifdef DEBUG_LOGGING
+	dr_fprintf(thread->dbgfile,"ubr done targ->0x%lx\n",target);
+	dr_flush_file(thread->dbgfile);
+	#endif
+
+
 }
 
 static void at_mbr(app_pc pc, app_pc target)
 {
+
+	BLOCKDATA *block_data = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
+
 	#ifdef DEBUG_LOGGING
-	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
-	dr_fprintf(thread->dbgfile, "at_mbr address 0x%lx -> 0x%lx\n",pc, target);
+	THREAD_STATE *dbgthread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+	dr_fprintf(dbgthread->dbgfile, "at_mbr address 0x%lx -> 0x%lx\n",pc, target);
+	dr_flush_file(dbgthread->dbgfile);
 	#endif
 
-	process_block(pc, target, (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2));
+	if (!block_data->unchained)
+	{
+		process_block_chain(pc, target, block_data);
+		return;
+	}
+
+	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+
+	++block_data->unchainedRepeats;
+		
+	//check to see if we arrived at the expected target
+	if (block_data->blockID != thread->lastBlock_expected_targID)
+	{
+		//nope, add a new target to previous block so it can be added to graph
+		thread->lastBlock->targets->insert(std::make_pair(block_data->appc, block_data->blockID));
+		thread->lastBlock->lastTargetID = block_data->blockID;
+	}
+
+	//update state so next block can do the same check
+	thread->lastBlock_expected_targID = block_data->lastTargetID;
+
+	//check if the next target is the one block expects
+	//if not then update the expected target and add it to target list
+	//this avoids expensive set lookup every execution
+	if (target != block_data->lastTarget)
+	{
+		BLOCKIDMAP::iterator blockIDit = thread->lastestBlockIDs.find(target);
+		if (blockIDit != thread->lastestBlockIDs.end())
+		{
+			thread->unsatisfiedBlockIDs = true;
+			thread->unsatisfiedBlockIDAddress = target;
+			block_data->lastTargetID = 0;
+		}
+		else
+		{
+			block_data->lastTargetID = blockIDit->second;
+			block_data->targets->insert(std::make_pair(target, block_data->lastTargetID));
+		}
+	}
+
+	//update state so drgat knows which member of unchained area executed an inactive block
+	thread->lastBlock = block_data;
+
+	#ifdef DEBUG_LOGGING
+	dr_fprintf(thread->dbgfile,"mbr done targ->0x%lx\n",target);
+	dr_flush_file(thread->dbgfile);
+	#endif
 }
 
 static void at_call(app_pc pc, app_pc target)
 {
+	BLOCKDATA *block_data = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
+
 	#ifdef DEBUG_LOGGING
-	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
-	dr_fprintf(thread->dbgfile, "at_call address 0x%lx -> 0x%lx\n",pc,target);
+	THREAD_STATE *dbgthread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+	dr_fprintf(dbgthread->dbgfile, "at_call address 0x%lx -> 0x%lx\n",pc,target);
+	dr_flush_file(dbgthread->dbgfile);
 	#endif
 
-	process_block(pc, target, (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2));
-}
+	if (!block_data->unchained)
+	{
+		process_block_chain(pc, target, block_data);
+		return;
+	}
 
-static void at_cbr_dbg(app_pc pc, app_pc target, app_pc fallthrough, int taken, void *u_d)
-{
+	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
+
+	++block_data->unchainedRepeats;
+		
+	//check to see if we arrived at the expected target
+	if (block_data->blockID != thread->lastBlock_expected_targID)
+	{
+		//nope, add a new target to previous block so it can be added to graph
+		thread->lastBlock->targets->insert(std::make_pair(block_data->appc, block_data->blockID));
+		thread->lastBlock->lastTargetID = block_data->blockID;
+	}
+
+	//update state so next block can do the same check
+	thread->lastBlock_expected_targID = block_data->lastTargetID;
+
+	//check if the next target is the one block expects
+	//if not then update the expected target and add it to target list
+	//this avoids expensive set lookup every execution
+	if (target != block_data->lastTarget)
+	{
+		BLOCKIDMAP::iterator blockIDit = thread->lastestBlockIDs.find(target);
+		if (blockIDit != thread->lastestBlockIDs.end())
+		{
+			thread->unsatisfiedBlockIDs = true;
+			thread->unsatisfiedBlockIDAddress = target;
+			block_data->lastTargetID = 0;
+		}
+		else
+		{
+			block_data->lastTargetID = blockIDit->second;
+			block_data->targets->insert(std::make_pair(target, block_data->lastTargetID));
+		}
+	}
+
+	//update state so drgat knows which member of unchained area executed an inactive block
+	thread->lastBlock = block_data;
+
 	#ifdef DEBUG_LOGGING
-	BLOCKDATA *block_data = (BLOCKDATA *)u_d;
-	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
-	dr_fprintf(thread->dbgfile,"at_cbr pc 0x%lx target 0x%lx blockhead 0x%lx fallthroughaddr:0x%lx taken:%d\n",
-		pc,target,block_data->appc,fallthrough,taken);
+	dr_fprintf(thread->dbgfile,"cabr done targ->0x%lx\n",target);
+	dr_flush_file(thread->dbgfile);
 	#endif
-
-	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
-	BLOCKDATA *blockdata = (BLOCKDATA *)u_d;
-	if (taken)
-		dr_fprintf(thread->f, "j%x,%x,%llx@", blockdata->appc, target, blockdata->blockID_numins);
-	else
-		dr_fprintf(thread->f, "j%x,%x,%llx@", blockdata->appc, fallthrough, blockdata->blockID_numins);
-	dr_flush_file(thread->f);
 }
 
 
-static void at_ubr_dbg(app_pc pc, app_pc target)
-{
-	#ifdef DEBUG_LOGGING
-	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
-	dr_fprintf(thread->dbgfile,"at_ubr 0x%lx->0x%lx\n",pc,target);
-	#endif
 
-	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
-	BLOCKDATA *blockdata = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
-	dr_fprintf(thread->f, "j%x,%x,%llx@", blockdata->appc, target, blockdata->blockID_numins);
-	dr_flush_file(thread->f);
-}
-
-static void at_mbr_dbg(app_pc pc, app_pc target)
-{
-	#ifdef DEBUG_LOGGING
-	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
-	dr_fprintf(thread->dbgfile, "at_mbr address 0x%lx -> 0x%lx\n",pc, target);
-	#endif
-
-	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
-	BLOCKDATA *blockdata = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
-	dr_fprintf(thread->f, "j%x,%x,%llx@", blockdata->appc, target, blockdata->blockID_numins);
-	dr_flush_file(thread->f);
-}
-
-static void at_call_dbg(app_pc pc, app_pc target)
-{
-	#ifdef DEBUG_LOGGING
-	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
-	dr_fprintf(thread->dbgfile, "at_call address 0x%lx -> 0x%lx\n",pc,target);
-	#endif
-
-	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
-	BLOCKDATA *blockdata = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
-	dr_fprintf(thread->f, "j%x,%x,%llx@", blockdata->appc, target, blockdata->blockID_numins);
-	dr_flush_file(thread->f);
-}
 
 DR_EXPORT void
 dr_client_main(client_id_t id, int argc, const char *argv[])
@@ -413,10 +734,10 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 	instrumentationTable[OPTIMISED_TRACING][AT_UBR] = at_ubr;
 	instrumentationTable[OPTIMISED_TRACING][AT_MBR] = at_mbr;
 	instrumentationTable[OPTIMISED_TRACING][AT_CALL] = at_call;
-	instrumentationTable[DEBUG_TRACING][AT_CBR] = at_cbr_dbg;
-	instrumentationTable[DEBUG_TRACING][AT_UBR] = at_ubr_dbg;
-	instrumentationTable[DEBUG_TRACING][AT_MBR] = at_mbr_dbg;
-	instrumentationTable[DEBUG_TRACING][AT_CALL] = at_call_dbg;
+	//instrumentationTable[DEBUG_TRACING][AT_CBR] = at_cbr_dbg;
+	//instrumentationTable[DEBUG_TRACING][AT_UBR] = at_ubr_dbg;
+	//instrumentationTable[DEBUG_TRACING][AT_MBR] = at_mbr_dbg;
+	//instrumentationTable[DEBUG_TRACING][AT_CALL] = at_call_dbg;
 
 	void *clientContext = dr_get_current_drcontext();
 	
@@ -431,11 +752,12 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 		return;
 	}
 
-	std::string appPath(dr_get_main_module()->full_path);
+	module_data_t * mainmodule = dr_get_main_module();
+	std::string appPath(mainmodule->full_path);
 	#ifdef WINDOWS
 		std::transform(appPath.begin(), appPath.end(), appPath.begin(), ::tolower);
 	#endif
-	module_data_t * mainmodule = dr_get_main_module();
+	
 
 	traceClientptr = new TRACECLIENT(appPath);
 
@@ -443,6 +765,8 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 
 	traceClientptr->allocMutx = dr_mutex_create();
 	traceClientptr->latestAllocNode = (ALLOCLL *)dr_global_alloc(sizeof(ALLOCLL));
+	traceClientptr->loggedMemoryLLStart = traceClientptr->latestAllocNode;
+
 	traceClientptr->tls_idx = drmgr_register_tls_field();
 	DR_ASSERT(traceClientptr->tls_idx != -1);
 	traceClientptr->pid = dr_get_process_id();
@@ -477,6 +801,7 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 	dr_fprintf(traceClientptr->modpipe, "PID%d", traceClientptr->pid);
 	dr_sleep(600);
 
+	dr_close_file(traceClientptr->modpipe);
 	traceClientptr->modpipe = INVALID_FILE;
 	pipeName = "\\\\.\\pipe\\rioThreadMod";
 	pipeName.append(std::to_string(traceClientptr->pid));
@@ -510,9 +835,8 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 		traceClientptr->includedModules.push_back(true);
 	}
 	else
-	{
 		traceClientptr->includedModules.push_back(false);
-	}
+
 	traceClientptr->modStarts.push_back(mainmodule->start);
 	traceClientptr->modEnds.push_back(mainmodule->end);
 	
@@ -536,22 +860,53 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 	#elif LINUX
 	drmgr_register_module_load_event(linux_event_module_load);
 	#endif
+
+	dr_free_module_data(mainmodule);
 }
 
 
 static void event_exit()
 {
+
+	//no real point doing this cleanup but i guess it's good practice
+	//the logged allocation makes new BB allocation take a bit longer but probably not meaningfully.
+	//try without and see if worth dropping
+	dr_mutex_lock(traceClientptr->allocMutx);
+	ALLOCLL *nextNode, *freeThisNode = (ALLOCLL *)traceClientptr->loggedMemoryLLStart->next;
+
+	while (freeThisNode)
+	{
+		dr_global_free(freeThisNode->addr, freeThisNode->size);
+
+		nextNode = (ALLOCLL *)freeThisNode->next;
+		dr_global_free(freeThisNode,sizeof(ALLOCLL));
+		freeThisNode = nextNode;
+	}
+	dr_mutex_unlock(traceClientptr->allocMutx);
+	dr_mutex_destroy(traceClientptr->allocMutx);
+	
+	dr_global_free(traceClientptr->loggedMemoryLLStart,sizeof(ALLOCLL));
+
+	std::vector<std::unordered_set<TARG_BLOCKID_PAIR>*>::iterator setAdIt = setAddrs.begin();
+	for (; setAdIt!= setAddrs.end(); ++setAdIt)
+		delete *setAdIt;
+
 	dr_printf("[drgat]Ready to exit PID%d, waiting for writes to finish\n", dr_get_process_id());
-	dr_sleep(1000); //might not be needed
 	traceClientptr->write_sync_mod("[CLIENT]EVENT: Exit\n");
+
+	dr_close_file(traceClientptr->modpipe);
+	dr_close_file(traceClientptr->bbpipe);
+	drmgr_unregister_tls_field(traceClientptr->tls_idx);
+	delete traceClientptr;
 
 	file_t closer = dr_open_file("\\\\.\\pipe\\riomodpipe", DR_FILE_WRITE_OVERWRITE);
 	dr_fprintf(closer, "DIE");
 	dr_flush_file(closer);
 	dr_close_file(closer);
 
-	//should probably free some stuff - meh
+	drwrap_exit();
 	drmgr_exit();
+
 	dr_printf("[drgat]exit called for process %d\n", dr_get_process_id());
 }
 
@@ -559,18 +914,12 @@ static void event_thread_init(void *threadcontext)
 {
 	thread_id_t tid = dr_get_thread_id(threadcontext);
 	
-	DR_ASSERT_MSG(tid < MAXTHREADID, "Raise threadIDmax");
-
-	static dr_time_t dt;
-	dr_get_time(&dt);
-
 	traceClientptr->write_sync_mod("TI%d", tid);
 
 	char pipeName[255];
 	dr_snprintf(pipeName, 254, "\\\\.\\pipe\\rioThread%d", tid);
 
 	file_t threadoutpipe = INVALID_FILE;
-
 	//this has been a bottleneck in the past, be wary of it
 	while (threadoutpipe == INVALID_FILE)
 	{
@@ -578,8 +927,7 @@ static void event_thread_init(void *threadcontext)
 		threadoutpipe = dr_open_file(pipeName, DR_FILE_WRITE_OVERWRITE);
 	}
 
-	THREAD_STATE *thread;
-	thread = (THREAD_STATE *)dr_thread_alloc(threadcontext, sizeof(THREAD_STATE));
+	THREAD_STATE *thread = new THREAD_STATE;
 	thread->tid = tid;
 	thread->f = threadoutpipe;
 	thread->BBBuf = (char *)dr_thread_alloc(threadcontext, MAXBBBYTES);
@@ -587,10 +935,17 @@ static void event_thread_init(void *threadcontext)
 	thread->cacheRepeats = 0;
 	thread->loopEnd = 0;
 	thread->lastTick = 0;
+	thread->busyCounter = 0;
+	thread->unchainedExist = false;
+	thread->unsatisfiedBlockIDAddress = 0;
+	thread->unsatisfiedBlockIDs = false;
+	traceClientptr->threadList.push_back(thread);
+
 #ifdef DEBUG_LOGGING
 	char filebuf[MAX_PATH];
 	dr_get_current_directory(filebuf, MAX_PATH);
 	std::string threadDbgFile = filebuf+std::string("\\")+"tracelog"+std::to_string(traceClientptr->pid)+std::to_string(tid)+".txt";
+	dr_printf("logging to %s\n", threadDbgFile.c_str());
 	thread->dbgfile = dr_open_file(threadDbgFile.c_str(), DR_FILE_WRITE_OVERWRITE);
 #endif
 	drmgr_set_tls_field(threadcontext, traceClientptr->tls_idx, (THREAD_STATE *)thread);
@@ -608,8 +963,8 @@ event_thread_exit(void *threadcontext)
 
 	dr_sleep(200); //hopefully stop the memory free from screwing up pending BB writes
 	dr_thread_free(threadcontext, thread->BBBuf, MAXBBBYTES);
-	dr_thread_free(threadcontext, thread, sizeof(THREAD_STATE));
 
+	delete thread;
 	traceClientptr->write_sync_mod("texit @%d\n", tid);
 }
 
@@ -622,7 +977,6 @@ this: determines whether a block should be instrumented
 dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 	instrlist_t *bb,	bool for_trace, bool translating,	void **user_data)
 {
-	
 	thread_id_t tid = dr_get_thread_id(drcontext);
 	uint threadMod = threadModArr[tid];
 	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(drcontext, traceClientptr->tls_idx);
@@ -630,15 +984,57 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 	char *BBBuf = thread->BBBuf;
 
 	instr_t *firstIns = instrlist_first_app(bb);
-	app_pc firstiPC = instr_get_app_pc(firstIns);
-	bool isInstrumented = false;
-	int mno = -1;
-		uint bufIdx = 0;
-	UINT64 blockID_count = dr_get_random_value(INT_MAX) & 0xffff;
+	app_pc firstiPC = dr_fragment_app_pc(tag);
 
 	#ifdef DEBUG_LOGGING
 	dr_fprintf(dbgfile,"basic block head: %lx\n",firstiPC);
 	#endif
+
+	bool isInstrumented = false;
+	int mno = -1;
+	uint bufIdx = 0;
+	BLOCK_IDENTIFIER blockID = dr_get_random_value(INT_MAX);
+
+
+	if (thread->unsatisfiedBlockIDs)
+	{
+		if (thread->unsatisfiedBlockIDAddress == firstiPC)
+		{
+			thread->lastBlock_expected_targID = blockID;
+		}
+		else
+		{
+			BLOCKIDMAP::iterator blockIDIt = thread->lastestBlockIDs.find(thread->unsatisfiedBlockIDAddress);
+			if (blockIDIt != thread->lastestBlockIDs.end())
+			{
+				thread->lastBlock_expected_targID = blockIDIt->second;
+			}
+			else
+			{
+				thread->unsatisfiableBlockIDs[thread->unsatisfiedBlockIDAddress].push_back(thread->lastBlock);
+				thread->lastBlock_expected_targID = 0;
+			}
+		}
+		thread->unsatisfiedBlockIDAddress = 0;
+		thread->unsatisfiedBlockIDs = false;
+	}
+
+	//sometimes a block requests the ID for a target BB but it doesn't appear for ages
+	//this watches for it and sends rgat an update to it can draw the edge for it
+	if (!thread->unsatisfiableBlockIDs.empty())	
+	{
+		std::unordered_map<app_pc, std::vector<BLOCKDATA *>>::iterator unsatIt = thread->unsatisfiableBlockIDs.find(firstiPC);
+		if (unsatIt != thread->unsatisfiableBlockIDs.end())
+		{
+			std::vector<BLOCKDATA *>::iterator requestorIt = unsatIt->second.begin();
+			for (; requestorIt != unsatIt->second.end(); ++requestorIt)
+			{
+				BLOCKDATA *requestor = *requestorIt;
+				dr_fprintf(thread->f, "SAT,%lx,%lx,%lx,%lx@",requestor->appc, requestor->blockID,firstiPC,blockID);
+			}
+			unsatIt = thread->unsatisfiableBlockIDs.erase(unsatIt);
+		}
+	}
 
 	/*
 	might do better with dr_lookup_module but it causes error :( 
@@ -646,12 +1042,13 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 	need to know where this code is, compare with module list
 	*/
 	//in same module as last BB looked at for this thread
+
 	if (
 		(firstiPC >= traceClientptr->modStarts.at(threadMod)) && (firstiPC <= traceClientptr->modEnds.at(threadMod))
 		)
 	{
 		isInstrumented = traceClientptr->includedModules.at(threadMod);
-		bufIdx = dr_snprintf(BBBuf, 512, "B@%x@%d@%d@%x", firstiPC, threadMod, isInstrumented, blockID_count);
+		bufIdx = dr_snprintf(BBBuf, 512, "B@%lx@%d@%d@%lx", firstiPC, threadMod, isInstrumented, blockID);
 	}
 	else
 	{
@@ -664,7 +1061,7 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 			threadMod = mno;
 			threadModArr[tid] = mno;
 			isInstrumented = traceClientptr->includedModules.at(threadMod);
-			bufIdx = dr_snprintf(BBBuf, 512, "B@%x@%d@%d@%x", firstiPC, mno, isInstrumented, blockID_count);
+			bufIdx = dr_snprintf(BBBuf, 512, "B@%lx@%d@%d@%lx", firstiPC, mno, isInstrumented, blockID);
 			break;
 		}
 
@@ -681,7 +1078,7 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 			{
 				isInstrumented = true;
 				mno = 0;
-				bufIdx = dr_snprintf(BBBuf, 512, "B@%x@%d@1@%x", firstiPC, mno, blockID_count);
+				bufIdx = dr_snprintf(BBBuf, 512, "B@%lx@%d@1@%lx", firstiPC, mno, blockID);
 			}
 			else
 			{
@@ -696,7 +1093,7 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 				dr_printf("-------------\n");
 
 				mno = 0;
-				bufIdx = dr_snprintf(BBBuf, 512, "B@%x@%d@1@%x", firstiPC, mno, blockID_count);
+				bufIdx = dr_snprintf(BBBuf, 512, "B@%lx@%d@1@%lx", firstiPC, mno, blockID);
 			}
 		}
 	}
@@ -704,6 +1101,9 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 	//no instrumentation done on external code, just report it exists and leave
 	if(!isInstrumented) 
 	{
+		#ifdef DEBUG_LOGGING
+		dr_fprintf(dbgfile,"block external, done\n",firstiPC);
+		#endif
 		BBBuf[bufIdx] = 0;
 		traceClientptr->write_sync_bb(BBBuf, bufIdx);	//this used to be needed... might not be now
 		return DR_EMIT_DEFAULT;
@@ -714,6 +1114,8 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 	int lineIdx = 0, ilen, opcIdx;
 
 	char *blockBuffer = thread->opBuffer;
+
+	bool debugd = false;
 	//opcodes for each instruction
 	for (instr_t *ins = firstIns; ins != NULL; ins = instr_get_next(ins)) 
 	{
@@ -725,36 +1127,48 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 
 		ilen = instr_length(drcontext, ins);
 		for (opcIdx = 0; opcIdx < ilen; ++opcIdx)
-		{
 			lineIdx += dr_snprintf(blockBuffer + lineIdx, MAXOPCODESLEN - lineIdx, "%02x", instr_get_raw_byte(ins, opcIdx));
-		}
 
 		bufIdx += dr_snprintf(BBBuf + bufIdx, lineIdx, "%s", blockBuffer);
 		DR_ASSERT_MSG(bufIdx < MAXBBBYTES, "[drgat]FATAL: BB string larger than MAXBBBYTES!");
 	}
 
-	BLOCKDATA *bb_u_d = (BLOCKDATA *)logged_memalloc(sizeof(BLOCKDATA));
-	bb_u_d->appc = firstiPC;
-	bb_u_d->blockID_numins = (blockID_count << 32)+instructionCount;
+	BLOCKDATA *block_data = new BLOCKDATA;
+	block_data->appc = firstiPC;
+	block_data->blockID = blockID;
+	BLOCK_IDENTIFIER_COUNT blockID_numins = ((BLOCK_IDENTIFIER_COUNT)((BLOCK_IDENTIFIER_COUNT)blockID<<32))+instructionCount;
+	block_data->blockID_numins = blockID_numins;
+	block_data->busyCounter = 0;
+	block_data->unchained = false;
+	block_data->unchainedRepeats = 0;
+	block_data->targets = new std::unordered_set<TARG_BLOCKID_PAIR>;
+	block_data->lastTarget = 0;
+	block_data->lastTargetID = 0;
+	block_data->dbgtid = tid;
+
+	//todo: possible reader/writer locking. thread could be reading this asynchronously, not sure if a 32bit write is atomic
+	//dr_printf("setting traceClientptr->lastestBlockIDs[%lx] = %lx",firstiPC,blockID);
+	thread->lastestBlockIDs[firstiPC] = blockID;
+	//dr_printf("Assinging block data %lx (id %lx)for thread %d\n", firstiPC, traceClientptr->lastestBlockIDs[firstiPC], tid);
 
 	BBBuf[bufIdx] = 0;
 	traceClientptr->write_sync_bb(BBBuf, bufIdx); //send to basic block handler thread
 
 	//finally we instrument the code to tell the trace handler thread each time the block executes
 	instr_t *lasti = instrlist_last_app(bb);
-	
+
 	//debug mode or optimised
 	char traceType = traceClientptr->processingMode;
 
 	//add appropriate flow control processing code to the block terminator
 	if (instr_is_cbr(lasti))
-		dr_insert_cbr_instrumentation_ex(drcontext, bb, lasti, instrumentationTable[traceType][AT_CBR], OPND_CREATE_INT32(bb_u_d));
+		dr_insert_cbr_instrumentation_ex(drcontext, bb, lasti, instrumentationTable[traceType][AT_CBR], OPND_CREATE_INT32(block_data));
 	else 
 	{
 		//the other instruction instrumentation calls don't allow passing of a user argument
 		//we have to transfer pointer to block metadata using a spill slot (2) instead
 		dr_save_reg(drcontext, bb, lasti, DR_REG_XAX, SPILL_SLOT_1);
-		instr_t *in = INSTR_CREATE_mov_imm(drcontext, opnd_create_reg(DR_REG_XAX), OPND_CREATE_INT32(bb_u_d));
+		instr_t *in = INSTR_CREATE_mov_imm(drcontext, opnd_create_reg(DR_REG_XAX), OPND_CREATE_INT32(block_data));
 		instrlist_meta_preinsert(bb,lasti,in);
 		dr_save_reg(drcontext, bb, lasti, DR_REG_XAX, SPILL_SLOT_2);
 		dr_restore_reg(drcontext,bb,lasti,DR_REG_XAX,SPILL_SLOT_1);
@@ -771,6 +1185,11 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 		else
 			dr_printf("[drgat]PROBABLY FATAL: Unhandled block terminator. Memory corruption in target?\n");
 	}
+
+	#ifdef DEBUG_LOGGING
+		dr_fprintf(dbgfile,"block internal, done\n",firstiPC);
+	#endif
+
 	return DR_EMIT_DEFAULT;
 }
 

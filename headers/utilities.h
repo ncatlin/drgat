@@ -10,3 +10,5 @@ void b64_char_arg(char arg, char *buf);
 
 void start_sym_processing(int modindex, char *path);
 extern TRACECLIENT *traceClientptr;
+
+extern unsigned long *threadmemcount;

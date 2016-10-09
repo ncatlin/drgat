@@ -3,22 +3,10 @@
 #include "tracestructs.h"
 #pragma once
 
-
-#define MAXTHREADID 65000
-
 //if a call blocks it could be in middle of a tag cache
 //if we want to see the red line waiting on it during runtime we have to dump the cache
 //bad for performance in big loops though, so it should be optional
 #define BREAK_LOOP_ON_BLOCK 1
-
-//passed to each basic block clean all 
-//so it can decide whether to print its address
-struct BLOCKDATA {
-	uint numInstructions;
-	app_pc appc; 
-	app_pc fallthrough;
-	UINT64 blockID_numins;
-};
 
 typedef struct {
 	void *addr;
@@ -34,8 +22,10 @@ typedef struct {
 #define AT_MBR 2
 #define AT_CALL 3
 
-
 #define MAXINCLUDES 128
+
+//magic performance number. adjust to taste
+#define DEINSTRUMENTATION_LIMIT 10
 
 //todo: put stuff protected/private
 class TRACECLIENT {
@@ -73,11 +63,11 @@ public:
 	 //by default we treat an unknown dll as external
 	 bool defaultInstrument;
 	 uint numIncludes;
-	 //std::vector<std::string> modulePaths;
 	 std::vector <bool>includedModules;
 	 std::vector<std::string> modNameArray; //module names
 	 std::vector<app_pc> modStarts; //module start addresses
 	 std::vector<app_pc> modEnds; //module end addresses
+	 std::vector<THREAD_STATE *> threadList;
 
 	void *modMutx, *parentMutx, *allocMutx;
 
@@ -86,6 +76,7 @@ public:
 
 	int pid;
 
+	ALLOCLL *loggedMemoryLLStart;
 	ALLOCLL *latestAllocNode;
 	void load_modinclude_strings(char *commaSepPaths);
 	void load_modexclude_strings(char *commaSepPaths);

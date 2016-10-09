@@ -53,6 +53,8 @@ void *logged_memalloc(size_t size)
 	void *bufAddr = dr_global_alloc(size);
 	DR_ASSERT_MSG(bufAddr, "Alloc Failed!");
 
+	//dr_printf("Allocated mem at address %lx, size %ld\n",bufAddr,size);
+
 	ALLOCLL *thisAlloc = (ALLOCLL *)dr_global_alloc(sizeof(ALLOCLL));
 	thisAlloc->addr = bufAddr;
 	thisAlloc->size = size;
@@ -60,6 +62,7 @@ void *logged_memalloc(size_t size)
 	dr_mutex_lock(traceClientptr->allocMutx);
 	traceClientptr->latestAllocNode->next = thisAlloc;
 	traceClientptr->latestAllocNode = thisAlloc;
+	traceClientptr->latestAllocNode->next = 0;
 	dr_mutex_unlock(traceClientptr->allocMutx);
 	return bufAddr;
 
@@ -78,6 +81,7 @@ int strcicmp(char const *a, char const *b)
 
 void printTagCache(THREAD_STATE *thread)
 {
+	if (!thread->tagIdx && !thread->cacheRepeats) return;
 	size_t byteswritten = 0;
 	int cacheEnd;
 	//first print out any complete loops
@@ -86,22 +90,24 @@ void printTagCache(THREAD_STATE *thread)
 		cacheEnd = thread->loopEnd;
 
 		byteswritten += dr_fprintf(thread->f, "RS%d@", thread->cacheRepeats);
-		for (int i = 0; i < cacheEnd; ++i)
+		for (int i = 0; i <= cacheEnd; ++i)
 		{
-			//dr_printf("LOOP CACHEDUMP %d its of %d blocks block:%lx targ:%lx\n",
-			//	thread->cacheRepeats,cacheEnd,thread->tagCache[i],thread->targetAddresses[i]);
-
+			#ifdef DEBUG_LOGGING
+			dr_fprintf(thread->dbgfile,"LOOP CACHEDUMP %d its of %d blocks block:%lx targ:%lx %lx\n",
+				thread->cacheRepeats,cacheEnd,thread->tagCache[i],thread->targetAddresses[i], thread->blockID_counts[i]& 0xffffffff);
+			#endif
 			byteswritten += dr_fprintf(thread->f, "j%x,%x,%llx@",
 				thread->tagCache[i],thread->targetAddresses[i], thread->blockID_counts[i]);
 		}
 		byteswritten += dr_fprintf(thread->f, "RE@");
 	}
-	
+
 	cacheEnd = thread->tagIdx;
 	for (int i = 0; i < cacheEnd; ++i)
 	{
-		//dr_printf("STD CACHEDUMP of %d blocks block:%lx targ:%lx\n",
-		//		cacheEnd,thread->tagCache[i],thread->targetAddresses[i]);
+		#ifdef DEBUG_LOGGING
+		dr_fprintf(thread->dbgfile,"STD CACHEDUMP of %d blocks block:%lx targ:%lx idc:%lx\n",cacheEnd,thread->tagCache[i],thread->targetAddresses[i], thread->blockID_counts[i]& 0xffffffff);
+		#endif
 		byteswritten += dr_fprintf(thread->f, "j%x,%x,%llx@",	thread->tagCache[i],thread->targetAddresses[i], thread->blockID_counts[i]);
 	}
 
@@ -109,9 +115,10 @@ void printTagCache(THREAD_STATE *thread)
 	if ((int)byteswritten <= 0 && (thread->tagIdx || thread->loopEnd))
 	{
 		dr_sleep(1500);
+		dr_printf("[drgat]CALLING ABORT! WRITE FAIL!");
 		dr_abort();
 	}
-	
+
 	dr_flush_file(thread->f);
 	thread->tagIdx = 0;
 	thread->loopEnd = 0;

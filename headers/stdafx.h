@@ -27,12 +27,14 @@
 #include <sstream>
 #include <algorithm>
 #include <map>
+#include <unordered_map>
+#include <unordered_set>
 #include <math.h>
 
 #pragma comment (lib , "dynamorio.lib")
 #pragma comment (lib , "drmgr.lib")
 #pragma comment (lib , "drwrap.lib")
-#pragma comment (lib , "drx.lib")
 #pragma comment (lib , "drsyms.lib")
 #pragma comment (lib , "drutil.lib")
 
+//#define DEBUG_LOGGING
