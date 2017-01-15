@@ -8,8 +8,8 @@ static void wrapInternetConnectW(void *wrapcxt, OUT void **user_data)
 	DWORD port = (DWORD)drwrap_get_arg(wrapcxt, 2);
 	
 	b64_wstring_arg(path, thread->stringbuf);
-	dr_fprintf(thread->f, "ARG,%d,%x,%x,M,1,%s@", 1, drwrap_get_func(wrapcxt), thread->lastBlock->appc, thread->stringbuf);
-	dr_fprintf(thread->f, "ARG,%d,%x,%x,E,0,%d@", 2, drwrap_get_func(wrapcxt), thread->lastBlock->appc, port);
+	dr_fprintf(thread->f, "ARG,%d,"ADDR_FMT","ADDR_FMT",M,1,%s@", 1, drwrap_get_func(wrapcxt), thread->lastBlock->appc, thread->stringbuf);
+	dr_fprintf(thread->f, "ARG,%d,"ADDR_FMT","ADDR_FMT",E,0,%d@", 2, drwrap_get_func(wrapcxt), thread->lastBlock->appc, port);
 }
 
 static void wrapHTTPOpenReqW(void *wrapcxt, OUT void **user_data)
@@ -20,15 +20,15 @@ static void wrapHTTPOpenReqW(void *wrapcxt, OUT void **user_data)
 	LPCWSTR objname = (LPCWSTR)drwrap_get_arg(wrapcxt, 2);
 
 	if (!verb) 
-		dr_fprintf(thread->f, "ARG,%d,%x,%x,M,0,%s@", 1, drwrap_get_func(wrapcxt), thread->lastBlock->appc, "GET");
+		dr_fprintf(thread->f, "ARG,%d,"ADDR_FMT","ADDR_FMT",M,0,%s@", 1, drwrap_get_func(wrapcxt), thread->lastBlock->appc, "GET");
 	else
 	{
 		b64_wstring_arg(verb, thread->stringbuf);
-		dr_fprintf(thread->f, "ARG,%d,%x,%x,M,1,%s@", 1, drwrap_get_func(wrapcxt), thread->lastBlock->appc, thread->stringbuf);
+		dr_fprintf(thread->f, "ARG,%d,"ADDR_FMT","ADDR_FMT",M,1,%s@", 1, drwrap_get_func(wrapcxt), thread->lastBlock->appc, thread->stringbuf);
 	}
 
 	b64_wstring_arg(objname, thread->stringbuf);
-	dr_fprintf(thread->f, "ARG,%d,%x,%x,E,1,%s@", 2, drwrap_get_func(wrapcxt), thread->lastBlock->appc, thread->stringbuf);
+	dr_fprintf(thread->f, "ARG,%d,"ADDR_FMT","ADDR_FMT",E,1,%s@", 2, drwrap_get_func(wrapcxt), thread->lastBlock->appc, thread->stringbuf);
 
 }
 

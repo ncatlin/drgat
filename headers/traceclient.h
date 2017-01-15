@@ -74,7 +74,7 @@ public:
 	file_t modpipe;
 	file_t bbpipe;
 
-	int pid;
+	process_id_t pid;
 
 	ALLOCLL *loggedMemoryLLStart;
 	ALLOCLL *latestAllocNode;

@@ -15,10 +15,7 @@ void windows_event_module_load(void *drcontext, const module_data_t *info, bool 
 	//we need the executable to be module[0], but it's not always the first presented
 	//so we handle it in client_init and skip it when this is called
 	if (info->start == traceClientptr->modStarts[0])
-	{
-		dr_printf("[drgat] skipping mod start\n");
 		return;
-	}
 
 	std::string path(info->full_path);
 	std::transform(path.begin(), path.end(), path.begin(), ::tolower);
@@ -40,7 +37,7 @@ void windows_event_module_load(void *drcontext, const module_data_t *info, bool 
 	b64_string_arg(info->full_path,b64path);
 
 	traceClientptr->includedModules.push_back(isInstrumented);
-	traceClientptr->write_sync_mod("mn@%s@%d@%lx@%lx@%x", 
+	traceClientptr->write_sync_mod("mn@%s@%d@"ADDR_FMT"@"ADDR_FMT"@%x", 
 		b64path, modindex, info->start, info->end, !traceClientptr->includedModules[modindex]);
 
 
@@ -89,8 +86,8 @@ static void wrapZwallocvm(void *wrapcxt, OUT void **user_data)
 	PSIZE_T size = (PSIZE_T)drwrap_get_arg(wrapcxt, 3);
 	ULONG protect = (ULONG)drwrap_get_arg(wrapcxt, 5);
 	app_pc retaddr = thread->lastBlock->appc;
-	dr_fprintf(thread->f, "ARG,%d,%x,%x,M,0,%d@", 3, drwrap_get_func(wrapcxt), retaddr, size);
-	dr_fprintf(thread->f, "ARG,%d,%x,%x,E,0,%d@", 5, drwrap_get_func(wrapcxt), retaddr, protect);
+	dr_fprintf(thread->f, "ARG,%d,%llx,%llx,M,0,%d@", 3, drwrap_get_func(wrapcxt), retaddr, size);
+	dr_fprintf(thread->f, "ARG,%d,%llx,%llx,E,0,%d@", 5, drwrap_get_func(wrapcxt), retaddr, protect);
 }
 */
 

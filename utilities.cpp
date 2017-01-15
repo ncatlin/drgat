@@ -96,7 +96,7 @@ void printTagCache(THREAD_STATE *thread)
 			dr_fprintf(thread->dbgfile,"LOOP CACHEDUMP %d its of %d blocks block:%lx targ:%lx %lx\n",
 				thread->cacheRepeats,cacheEnd,thread->tagCache[i],thread->targetAddresses[i], thread->blockID_counts[i]& 0xffffffff);
 			#endif
-			byteswritten += dr_fprintf(thread->f, "j%x,%x,%llx@",
+			byteswritten += dr_fprintf(thread->f, "j"ADDR_FMT","ADDR_FMT",%llx@",
 				thread->tagCache[i],thread->targetAddresses[i], thread->blockID_counts[i]);
 		}
 		byteswritten += dr_fprintf(thread->f, "RE@");
@@ -108,7 +108,8 @@ void printTagCache(THREAD_STATE *thread)
 		#ifdef DEBUG_LOGGING
 		dr_fprintf(thread->dbgfile,"STD CACHEDUMP of %d blocks block:%lx targ:%lx idc:%lx\n",cacheEnd,thread->tagCache[i],thread->targetAddresses[i], thread->blockID_counts[i]& 0xffffffff);
 		#endif
-		byteswritten += dr_fprintf(thread->f, "j%x,%x,%llx@",	thread->tagCache[i],thread->targetAddresses[i], thread->blockID_counts[i]);
+		byteswritten += dr_fprintf(thread->f, "j"ADDR_FMT","ADDR_FMT",%llx@", 
+			thread->tagCache[i],thread->targetAddresses[i], thread->blockID_counts[i]);
 	}
 
 	//pipe closed, rgat probably closed too

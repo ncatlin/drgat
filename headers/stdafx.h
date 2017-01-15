@@ -9,8 +9,9 @@
 #pragma once
        
 #define WINDOWS
-#define X86_32
-//#if defined _WIN32
+
+//#define X86_32
+//#define X86_64
 
 #include "dr_api.h"
 #include <stddef.h> /* for offsetof */
@@ -36,5 +37,3 @@
 #pragma comment (lib , "drwrap.lib")
 #pragma comment (lib , "drsyms.lib")
 #pragma comment (lib , "drutil.lib")
-
-//#define DEBUG_LOGGING

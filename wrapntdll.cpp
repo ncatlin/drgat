@@ -23,7 +23,7 @@ wrapZWCreateFile(void *wrapcxt, OUT void **user_data)
 	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
 	POBJECT_ATTRIBUTES objatts = (POBJECT_ATTRIBUTES)drwrap_get_arg(wrapcxt, 2);
 	b64_wstring_arg(objatts->ObjectName->Buffer, thread->stringbuf);
-	dr_fprintf(thread->f, "ARG,%d,%x,%x,E,1,%s@", 2, drwrap_get_func(wrapcxt), thread->sourceInstruction, thread->stringbuf);
+	dr_fprintf(thread->f, "ARG,%d,"ADDR_FMT","ADDR_FMT",E,1,%s@", 2, drwrap_get_func(wrapcxt), thread->sourceInstruction, thread->stringbuf);
 
 }
 
@@ -32,7 +32,7 @@ static void wrapLdrLoadDll(void *wrapcxt, OUT void **user_data)
 	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
 	PUNICODE_STRING modname = (PUNICODE_STRING)drwrap_get_arg(wrapcxt, 2);
 	b64_wstring_arg(modname->Buffer, thread->stringbuf);
-	dr_fprintf(thread->f, "ARG,%d,%x,%x,E,1,%s@", 2, drwrap_get_func(wrapcxt), thread->sourceInstruction, thread->stringbuf);
+	dr_fprintf(thread->f, "ARG,%d,"ADDR_FMT","ADDR_FMT",E,1,%s@", 2, drwrap_get_func(wrapcxt), thread->sourceInstruction, thread->stringbuf);
 }
 
 static void wrapRTLQueryEnvvu(void *wrapcxt, OUT void **user_data)
@@ -40,7 +40,7 @@ static void wrapRTLQueryEnvvu(void *wrapcxt, OUT void **user_data)
 	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
 	PUNICODE_STRING variableUC = (PUNICODE_STRING)drwrap_get_arg(wrapcxt, 1);
 	b64_wstring_arg(variableUC->Buffer, thread->stringbuf);
-	dr_fprintf(thread->f, "ARG,%d,%x,%x,E,1,%s@", 1, drwrap_get_func(wrapcxt), thread->sourceInstruction, variableUC->Buffer);
+	dr_fprintf(thread->f, "ARG,%d,"ADDR_FMT","ADDR_FMT",E,1,%s@", 1, drwrap_get_func(wrapcxt), thread->sourceInstruction, variableUC->Buffer);
 }
 
 void wrap_ntdll(module_handle_t handle)

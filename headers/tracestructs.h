@@ -10,6 +10,13 @@
 #define UNKNOWN 91999
 #define STRINGBUFMAX 512
 
+#ifdef X86_64
+#define ADDR_FMT "%llx"
+#elif X86_32
+#define ADDR_FMT "%lx"
+#endif
+
+
 typedef struct {
 	unsigned int modnum;
 } callback_data;
