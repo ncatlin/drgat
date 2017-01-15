@@ -145,6 +145,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDBGLOG|Win32'">
     <IncludePath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\include;C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\include;$(IncludePath)</IncludePath>
     <LibraryPath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\lib32\release;C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\lib32\release;$(LibraryPath)</LibraryPath>
+    <TargetName>drgat-debug</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <IncludePath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\include;C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\include;$(IncludePath)</IncludePath>
@@ -154,7 +155,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDBGLOG|x64'">
     <IncludePath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\include;C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\include;$(IncludePath)</IncludePath>
     <LibraryPath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\lib64\release;C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\lib64\release;$(LibraryPath)</LibraryPath>
-    <TargetName>drgat64</TargetName>
+    <TargetName>drgat64-debug</TargetName>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>

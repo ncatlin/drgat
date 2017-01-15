@@ -621,9 +621,6 @@ static void at_ubr(app_pc pc, app_pc target)
 
 static void at_mbr(app_pc pc, app_pc target)
 {
-	#ifdef DEBUG_LOGGING
-	dr_fprintf(dbgfile,"at_mbr called\n");
-	#endif
 	BLOCKDATA *block_data = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
 
 	#ifdef DEBUG_LOGGING
@@ -683,9 +680,6 @@ static void at_mbr(app_pc pc, app_pc target)
 
 static void at_call(app_pc pc, app_pc target)
 {
-	#ifdef DEBUG_LOGGING
-	dr_fprintf(dbgfile,"at_call called\n");
-	#endif
 	BLOCKDATA *block_data = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
 
 	#ifdef DEBUG_LOGGING
@@ -836,9 +830,6 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 	pipeName = "\\\\.\\pipe\\rioThreadMod";
 	pipeName.append(std::to_string(traceClientptr->pid));
 
-	dr_printf("pipename: %d -",traceClientptr->pid);
-	dr_printf("%s+%d = %s\n","\\\\.\\pipe\\rioThreadMod", std::to_string(traceClientptr->pid).c_str(), pipeName.c_str());
-
 	traceClientptr->modpipe = dr_open_file(pipeName.c_str(), DR_FILE_WRITE_OVERWRITE);
 	failLimit = 3;
 	while (traceClientptr->modpipe == INVALID_FILE)
@@ -905,7 +896,7 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 static void event_exit()
 {
 	#ifdef DEBUG_LOGGING
-	dr_fprintf(dbgfile,"event_exit called\n");
+	dr_fprintf(dbgfile,"event_exit called for process %d\n", dr_get_process_id());
 	#endif
 	//no real point doing this cleanup but i guess it's good practice
 	//the logged allocation makes new BB allocation take a bit longer but probably not meaningfully.
@@ -946,7 +937,7 @@ static void event_exit()
 	drwrap_exit();
 	drmgr_exit();
 
-	dr_printf("[drgat]exit called for process %d\n", dr_get_process_id());
+	dr_printf("[drgat]exit completed for process %d\n", dr_get_process_id());
 }
 
 static void event_thread_init(void *threadcontext)
@@ -1049,7 +1040,7 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 	if (thread->unsatisfiedBlockIDs)
 	{
 		#ifdef DEBUG_LOGGING
-		dr_fprintf(dbgfile,"current unsatisfied block addr: "ADDR_FMT"\n",thread->unsatisfiedBlockIDAddress);
+		dr_fprintf(dbgfile,"Current unsatisfied block addr: "ADDR_FMT"\n",thread->unsatisfiedBlockIDAddress);
 		#endif
 
 		if (thread->unsatisfiedBlockIDAddress == firstiPC)
