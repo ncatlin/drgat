@@ -139,6 +139,9 @@ GeneratedArtifacts/
 _Pvt_Extensions/
 ModelManifest.xml
 
+*.vcxproj
+*.filters
+
 # =========================
 # Windows detritus
 # =========================
