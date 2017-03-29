@@ -93,7 +93,7 @@ void printTagCache(THREAD_STATE *thread)
 		for (int i = 0; i <= cacheEnd; ++i)
 		{
 			#ifdef DEBUG_LOGGING
-			dr_fprintf(thread->dbgfile,"LOOP CACHEDUMP %d its of %d blocks block:%lx targ:%lx %lx\n",
+			dr_fprintf(thread->dbgfile,"LOOP CACHEDUMP %d its of %d blocks block:"ADDR_FMT" targ:"ADDR_FMT" %lx\n",
 				thread->cacheRepeats,cacheEnd,thread->tagCache[i],thread->targetAddresses[i], thread->blockID_counts[i]& 0xffffffff);
 			#endif
 			byteswritten += dr_fprintf(thread->f, "j"ADDR_FMT","ADDR_FMT",%llx@",

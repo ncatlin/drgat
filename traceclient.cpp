@@ -232,7 +232,7 @@ inline void process_block_chain(app_pc pc, app_pc target, BLOCKDATA *block_data)
 	{
 
 		//this block (or its target) is new to the work area
-		//rechain everything (start processing slowly)
+		//rechain everything (ie: start processing it block by block)
 		if((block_data->busyCounter == 0) || (thread->lastestBlockIDs.count(target) == 0))
 		{
 			#ifdef DEBUG_LOGGING
@@ -252,21 +252,21 @@ inline void process_block_chain(app_pc pc, app_pc target, BLOCKDATA *block_data)
 				BLOCKDATA *chainedBlock = ((BLOCKDATA *)*unchainedIt);
 				std::unordered_set<TARG_BLOCKID_PAIR>::iterator targetsIt = chainedBlock->targets->begin();
 
-				/*
-				std::stringstream outpt;
-				outpt << "BX,"<<std::hex<<(unsigned long)chainedBlock->appc<<","<<chainedBlock->blockID_numins<<","<<std::hex<<chainedBlock->unchainedRepeats;
-				for(; targetsIt != chainedBlock->targets->end(); ++targetsIt)
-					outpt<<","<<std::hex<<(unsigned long)targetsIt->first<<","<<targetsIt->second;
-				dr_fprintf(thread->f,"%s@",outpt.str().c_str());
-				*/
-				
-				//not noticing any significant differences in speed between them but this avoids mem allocations
+
 				unsigned int outputcount = 0;
-				outputcount += dr_snprintf(thread->BXbuffer,TAGCACHESIZE, "BX,"ADDR_FMT",%llx,%lx",chainedBlock->appc,chainedBlock->blockID_numins,chainedBlock->unchainedRepeats);
-				for(; targetsIt != chainedBlock->targets->end(); ++targetsIt)
-					outputcount += dr_snprintf(thread->BXbuffer+outputcount,TAGCACHESIZE-outputcount,","ADDR_FMT",%lx",targetsIt->first, targetsIt->second);
-				dr_fprintf(thread->f,"%s@",thread->BXbuffer);
 				
+				outputcount += dr_snprintf(thread->BXbuffer, TAGCACHESIZE, "BX,"ADDR_FMT",%llx,%lx",chainedBlock->appc,chainedBlock->blockID_numins,chainedBlock->unchainedRepeats);
+				for(; targetsIt != chainedBlock->targets->end(); ++targetsIt)
+				{
+					DR_ASSERT_MSG(outputcount < TAGCACHESIZE, "BXbuffer overflow?");
+					outputcount += dr_snprintf(thread->BXbuffer+outputcount,TAGCACHESIZE-outputcount,","ADDR_FMT",%lx",targetsIt->first, targetsIt->second);
+				}
+				dr_fprintf(thread->f,"%s@",thread->BXbuffer);
+
+				#ifdef DEBUG_LOGGING
+				dr_fprintf(thread->dbgfile,"[%s@]",thread->BXbuffer);
+				dr_flush_file(thread->dbgfile);
+				#endif
 				
 				dr_flush_file(thread->f);
 
@@ -278,9 +278,18 @@ inline void process_block_chain(app_pc pc, app_pc target, BLOCKDATA *block_data)
 
 			//make link between unchained nodes and new appearance
 			//this also inserts current block onto graph
-			dr_fprintf(thread->f, "UL,"ADDR_FMT",%llx,"ADDR_FMT",%llx@", thread->lastBlock->appc,thread->lastBlock->blockID_numins, 
-				block_data->appc, block_data->blockID_numins);
+			dr_fprintf(thread->f, "UL,"ADDR_FMT",%llx,"ADDR_FMT",%llx,"ADDR_FMT"@", thread->lastBlock->appc, thread->lastBlock->blockID_numins, 
+				block_data->appc, block_data->blockID_numins, target);
 			dr_flush_file(thread->f);
+
+			#ifdef DEBUG_LOGGING
+				dr_fprintf(thread->dbgfile, "[UL entry,"ADDR_FMT",%llx,"ADDR_FMT",%llx,"ADDR_FMT"@]", thread->lastBlock->appc, thread->lastBlock->blockID_numins, 
+				block_data->appc, block_data->blockID_numins, target);
+				dr_flush_file(thread->dbgfile);
+			#endif
+				
+
+
 			thread->busyCounter = ++block_data->busyCounter;
 		}
 
@@ -303,7 +312,7 @@ inline void process_block_chain(app_pc pc, app_pc target, BLOCKDATA *block_data)
 			thread->lastBlock_expected_targID = targBlockID;
 
 			#ifdef DEBUG_LOGGING
-			dr_fprintf(thread->dbgfile,"UC0 Entry-- "ADDR_FMT",%lx,"ADDR_FMT",%lx@",block_data->appc, block_data->blockID, target, targBlockID);
+			dr_fprintf(thread->dbgfile,"[UC0 Entry-- "ADDR_FMT",%lx,"ADDR_FMT",%lx@]",block_data->appc, block_data->blockID, target, targBlockID);
 			#endif
 			//notify visualiser that this area is going to be busy and won't report back until done
 			dr_fprintf(thread->f, "UC,"ADDR_FMT",%lx,"ADDR_FMT",%lx@",block_data->appc, block_data->blockID, target, targBlockID);
@@ -359,7 +368,7 @@ inline void process_block_chain(app_pc pc, app_pc target, BLOCKDATA *block_data)
 			thread->lastBlock_expected_targID = targBlockID;
 
 			#ifdef DEBUG_LOGGING
-			dr_fprintf(thread->dbgfile,"UC1 Entry-- "ADDR_FMT",%lx,"ADDR_FMT",%lx\n",block_data->appc, block_data->blockID, target, targBlockID);
+			dr_fprintf(thread->dbgfile,"[UC1 Entry-- "ADDR_FMT",%lx,"ADDR_FMT",%lx]\n",block_data->appc, block_data->blockID, target, targBlockID);
 			#endif
 
 			dr_fprintf(thread->f, "UC,"ADDR_FMT",%lx,"ADDR_FMT",%lx@",block_data->appc, block_data->blockID, target, targBlockID);
@@ -484,24 +493,24 @@ inline void process_block_chain(app_pc pc, app_pc target, BLOCKDATA *block_data)
 
 }
 
-static void at_cbr(app_pc pc, app_pc target, app_pc fallthrough, int taken, void *blk_d)
+static void at_cbr(app_pc sourceInstructionAddress, app_pc targetBlockAddress, app_pc fallthrough, int taken, void *blk_d)
 {
 	#ifdef DEBUG_LOGGING
 	dr_fprintf(dbgfile,"at_cbr called\n");
 	#endif
-	app_pc actualTarget = taken ? target : fallthrough;
+	app_pc actualTarget = taken ? targetBlockAddress : fallthrough;
 	BLOCKDATA * block_data = ((BLOCKDATA *)blk_d);
 
 	#ifdef DEBUG_LOGGING
 	THREAD_STATE *dbgthread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
 	dr_fprintf(dbgthread->dbgfile,"at_cbr pc 0x"ADDR_FMT" target 0x"ADDR_FMT" blockhead 0x"ADDR_FMT" fallthroughaddr:0x"ADDR_FMT" taken:%d\n",
-		pc,target,block_data->appc,fallthrough,taken);
+		sourceInstructionAddress,targetBlockAddress,block_data->appc,fallthrough,taken);
 	dr_flush_file(dbgthread->dbgfile);
 	#endif
 
 	if (!block_data->unchained)
 	{
-		process_block_chain(pc, actualTarget, block_data);
+		process_block_chain(sourceInstructionAddress, actualTarget, block_data);
 		return;
 	}
 	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
@@ -509,10 +518,10 @@ static void at_cbr(app_pc pc, app_pc target, app_pc fallthrough, int taken, void
 	//increase count of executions for this block
 	++block_data->unchainedRepeats;
 		
-	//check to see if we arrived at the expected target
+	//check to see if this block is the expected target
 	if (block_data->blockID != thread->lastBlock_expected_targID)
 	{
-		//nope, add a new target to previous block so it can be added to graph
+		//nope! add a new target to previous blocks target set so it can be added to graph
 		thread->lastBlock->targets->insert(std::make_pair(block_data->appc, block_data->blockID));
 		thread->lastBlock->lastTargetID = block_data->blockID;
 	}
@@ -520,7 +529,7 @@ static void at_cbr(app_pc pc, app_pc target, app_pc fallthrough, int taken, void
 	//update state so next block can do the same check
 	thread->lastBlock_expected_targID = block_data->lastTargetID;
 
-	//check if the next target is the one block expects
+	//check if the target of this jump is the one block expects
 	//if not then update the expected target and add it to target list
 	//this avoids expensive set lookup every execution
 	if (actualTarget != block_data->lastTarget)
@@ -528,7 +537,7 @@ static void at_cbr(app_pc pc, app_pc target, app_pc fallthrough, int taken, void
 		block_data->lastTarget = actualTarget;
 
 		BLOCKIDMAP::iterator latestIDIt = thread->lastestBlockIDs.find(actualTarget);
-		//if not found then BB hasn't been created yet. this causes value to be set when it is created
+		//if not found then BB hasn't been created yet. block becomes 'unsatisfied' - value will be set when it is created
 		if (latestIDIt == thread->lastestBlockIDs.end())
 			{
 				thread->unsatisfiedBlockIDs = true;
@@ -552,7 +561,7 @@ static void at_cbr(app_pc pc, app_pc target, app_pc fallthrough, int taken, void
 }
 
 
-static void at_ubr(app_pc pc, app_pc target)
+static void at_ubr(app_pc sourceInstructionAddress, app_pc targetBlockAddress)
 {
 	#ifdef DEBUG_LOGGING
 	dr_fprintf(dbgfile,"at_ubr called\n");
@@ -563,18 +572,19 @@ static void at_ubr(app_pc pc, app_pc target)
 	
 	#ifdef DEBUG_LOGGING
 	THREAD_STATE *dbgthread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
-	dr_fprintf(dbgthread->dbgfile,"at_ubr 0x"ADDR_FMT"->0x"ADDR_FMT"\n",pc,target);
+	dr_fprintf(dbgthread->dbgfile,"at_ubr 0x"ADDR_FMT"->0x"ADDR_FMT"\n",sourceInstructionAddress,targetBlockAddress);
 	dr_flush_file(dbgthread->dbgfile);
 	#endif
 
 	if (!block_data->unchained)
 	{
-		process_block_chain(pc, target, block_data);
+		process_block_chain(sourceInstructionAddress, targetBlockAddress, block_data);
 		return;
 	}
 
 	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
 
+	//register 1 execution of every instruction in the block
 	++block_data->unchainedRepeats;
 		
 	//check to see if we arrived at the expected target
@@ -591,20 +601,20 @@ static void at_ubr(app_pc pc, app_pc target)
 	//check if the next target is the one block expects
 	//if not then update the expected target and add it to target list
 	//this avoids expensive set lookup every execution
-	if (target != block_data->lastTarget)
+	if (targetBlockAddress != block_data->lastTarget)
 	{
-		block_data->lastTarget = target;
-		BLOCKIDMAP::iterator blockIDit = thread->lastestBlockIDs.find(target);
+		block_data->lastTarget = targetBlockAddress;
+		BLOCKIDMAP::iterator blockIDit = thread->lastestBlockIDs.find(targetBlockAddress);
 		if (blockIDit != thread->lastestBlockIDs.end())
 		{
 			thread->unsatisfiedBlockIDs = true;
-			thread->unsatisfiedBlockIDAddress = target;
+			thread->unsatisfiedBlockIDAddress = targetBlockAddress;
 			block_data->lastTargetID = 0;
 		}
 		else
 		{
 			block_data->lastTargetID = blockIDit->second;
-			block_data->targets->insert(std::make_pair(target, block_data->lastTargetID));
+			block_data->targets->insert(std::make_pair(targetBlockAddress, block_data->lastTargetID));
 		}	
 	}
 
@@ -612,26 +622,26 @@ static void at_ubr(app_pc pc, app_pc target)
 	thread->lastBlock = block_data;
 
 	#ifdef DEBUG_LOGGING
-	dr_fprintf(thread->dbgfile,"ubr done targ->0x"ADDR_FMT"\n",target);
+	dr_fprintf(thread->dbgfile,"ubr done targ->0x"ADDR_FMT"\n",targetBlockAddress);
 	dr_flush_file(thread->dbgfile);
 	#endif
 
 
 }
 
-static void at_mbr(app_pc pc, app_pc target)
+static void at_mbr(app_pc sourceInstructionAddress, app_pc targetBlockAddress)
 {
 	BLOCKDATA *block_data = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
 
 	#ifdef DEBUG_LOGGING
 	THREAD_STATE *dbgthread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
-	dr_fprintf(dbgthread->dbgfile, "at_mbr address 0x"ADDR_FMT" -> 0x"ADDR_FMT"\n",pc, target);
+	dr_fprintf(dbgthread->dbgfile, "at_mbr address 0x"ADDR_FMT" -> 0x"ADDR_FMT"\n", sourceInstructionAddress, targetBlockAddress);
 	dr_flush_file(dbgthread->dbgfile);
 	#endif
 
 	if (!block_data->unchained)
 	{
-		process_block_chain(pc, target, block_data);
+		process_block_chain(sourceInstructionAddress, targetBlockAddress, block_data);
 		return;
 	}
 
@@ -653,19 +663,19 @@ static void at_mbr(app_pc pc, app_pc target)
 	//check if the next target is the one block expects
 	//if not then update the expected target and add it to target list
 	//this avoids expensive set lookup every execution
-	if (target != block_data->lastTarget)
+	if (targetBlockAddress != block_data->lastTarget)
 	{
-		BLOCKIDMAP::iterator blockIDit = thread->lastestBlockIDs.find(target);
+		BLOCKIDMAP::iterator blockIDit = thread->lastestBlockIDs.find(targetBlockAddress);
 		if (blockIDit != thread->lastestBlockIDs.end())
 		{
 			thread->unsatisfiedBlockIDs = true;
-			thread->unsatisfiedBlockIDAddress = target;
+			thread->unsatisfiedBlockIDAddress = targetBlockAddress;
 			block_data->lastTargetID = 0;
 		}
 		else
 		{
 			block_data->lastTargetID = blockIDit->second;
-			block_data->targets->insert(std::make_pair(target, block_data->lastTargetID));
+			block_data->targets->insert(std::make_pair(targetBlockAddress, block_data->lastTargetID));
 		}
 	}
 
@@ -673,24 +683,24 @@ static void at_mbr(app_pc pc, app_pc target)
 	thread->lastBlock = block_data;
 
 	#ifdef DEBUG_LOGGING
-	dr_fprintf(thread->dbgfile,"mbr done targ->0x"ADDR_FMT"\n",target);
+	dr_fprintf(thread->dbgfile,"mbr done targ->0x"ADDR_FMT"\n",targetBlockAddress);
 	dr_flush_file(thread->dbgfile);
 	#endif
 }
 
-static void at_call(app_pc pc, app_pc target)
+static void at_call(app_pc sourceInstructionAddress, app_pc targetBlockAddress)
 {
 	BLOCKDATA *block_data = (BLOCKDATA *)dr_read_saved_reg(dr_get_current_drcontext(), SPILL_SLOT_2);
 
 	#ifdef DEBUG_LOGGING
 	THREAD_STATE *dbgthread = (THREAD_STATE *)drmgr_get_tls_field(dr_get_current_drcontext(), traceClientptr->tls_idx);
-	dr_fprintf(dbgthread->dbgfile, "at_call address 0x"ADDR_FMT" -> 0x"ADDR_FMT"\n",pc,target);
+	dr_fprintf(dbgthread->dbgfile, "at_call address 0x"ADDR_FMT" -> 0x"ADDR_FMT"\n",sourceInstructionAddress,targetBlockAddress);
 	dr_flush_file(dbgthread->dbgfile);
 	#endif
 
 	if (!block_data->unchained)
 	{
-		process_block_chain(pc, target, block_data);
+		process_block_chain(sourceInstructionAddress, targetBlockAddress, block_data);
 		return;
 	}
 
@@ -712,19 +722,19 @@ static void at_call(app_pc pc, app_pc target)
 	//check if the next target is the one block expects
 	//if not then update the expected target and add it to target list
 	//this avoids expensive set lookup every execution
-	if (target != block_data->lastTarget)
+	if (targetBlockAddress != block_data->lastTarget)
 	{
-		BLOCKIDMAP::iterator blockIDit = thread->lastestBlockIDs.find(target);
+		BLOCKIDMAP::iterator blockIDit = thread->lastestBlockIDs.find(targetBlockAddress);
 		if (blockIDit != thread->lastestBlockIDs.end())
 		{
 			thread->unsatisfiedBlockIDs = true;
-			thread->unsatisfiedBlockIDAddress = target;
+			thread->unsatisfiedBlockIDAddress = targetBlockAddress;
 			block_data->lastTargetID = 0;
 		}
 		else
 		{
 			block_data->lastTargetID = blockIDit->second;
-			block_data->targets->insert(std::make_pair(target, block_data->lastTargetID));
+			block_data->targets->insert(std::make_pair(targetBlockAddress, block_data->lastTargetID));
 		}
 	}
 
@@ -732,7 +742,7 @@ static void at_call(app_pc pc, app_pc target)
 	thread->lastBlock = block_data;
 
 	#ifdef DEBUG_LOGGING
-	dr_fprintf(thread->dbgfile,"cabr done targ->0x"ADDR_FMT"\n",target);
+	dr_fprintf(thread->dbgfile,"cabr done targ->0x"ADDR_FMT"\n",targetBlockAddress);
 	dr_flush_file(thread->dbgfile);
 	#endif
 }
@@ -747,7 +757,7 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 	
 	drmgr_init();
 	drwrap_init();
-
+	dr_printf("started called\n");
 	instrumentationTable[OPTIMISED_TRACING][AT_CBR] = at_cbr;
 	instrumentationTable[OPTIMISED_TRACING][AT_UBR] = at_ubr;
 	instrumentationTable[OPTIMISED_TRACING][AT_MBR] = at_mbr;
@@ -1265,7 +1275,14 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 		}
 
 		else
-			dr_printf("[drgat]PROBABLY FATAL: Unhandled block terminator. Memory corruption in target?\n");
+			{
+				char disasBuf[120];
+				instr_disassemble_to_buffer(drcontext, lasti, disasBuf, 120);
+				#ifdef DEBUG_LOGGING
+				dr_fprintf(dbgfile,"\tERROR: Unhandled block terminator \n\t%s at "ADDR_FMT".\n",disasBuf,instr_get_app_pc(lasti));
+				#endif
+				dr_printf("[drgat]ERROR: Unhandled block terminator \n\t%s at "ADDR_FMT".\n",disasBuf,instr_get_app_pc(lasti));
+		}
 	}
 
 	#ifdef DEBUG_LOGGING
