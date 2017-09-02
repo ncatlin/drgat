@@ -17,6 +17,7 @@ Need to record target of every jump in case it hits external + can check conditi
 #include "headers\traceclient.h"
 #include "headers\utilities.h"
 
+
 //todo: sort crash if target buffer full (ie: paused w/debugger)
 
 static void event_thread_init(void *drcontext);
@@ -37,12 +38,6 @@ static void at_cbr(app_pc pc, app_pc target, app_pc fallthrough, int taken, void
 static void at_ubr(app_pc pc, app_pc target);
 static void at_mbr(app_pc pc, app_pc target);
 static void at_call(app_pc pc, app_pc target);
-
-static void at_cbr_dbg(app_pc pc, app_pc target, app_pc fallthrough, int taken, void *u_d);
-static void at_ubr_dbg(app_pc pc, app_pc target);
-static void at_mbr_dbg(app_pc pc, app_pc target);
-static void at_call_dbg(app_pc pc, app_pc target);
-void *instrumentationTable[2][4];
 
 #ifdef DEBUG_LOGGING
 file_t dbgfile;
@@ -133,7 +128,8 @@ void TRACECLIENT::load_modexclude_strings(char *commaSepPaths)
 	std::string pathString(commaSepPaths);
 	std::stringstream ss(pathString);
 
-	while (excludedModuleStrings.size() < MAXINCLUDES) {
+	while (excludedModuleStrings.size() < MAXINCLUDES)
+	{
 		std::string path;
 		std::getline(ss, path, ',');
 		if (path.empty()) return;
@@ -757,15 +753,6 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 	
 	drmgr_init();
 	drwrap_init();
-	dr_printf("started called\n");
-	instrumentationTable[OPTIMISED_TRACING][AT_CBR] = at_cbr;
-	instrumentationTable[OPTIMISED_TRACING][AT_UBR] = at_ubr;
-	instrumentationTable[OPTIMISED_TRACING][AT_MBR] = at_mbr;
-	instrumentationTable[OPTIMISED_TRACING][AT_CALL] = at_call;
-	//instrumentationTable[DEBUG_TRACING][AT_CBR] = at_cbr_dbg;
-	//instrumentationTable[DEBUG_TRACING][AT_UBR] = at_ubr_dbg;
-	//instrumentationTable[DEBUG_TRACING][AT_MBR] = at_mbr_dbg;
-	//instrumentationTable[DEBUG_TRACING][AT_CALL] = at_call_dbg;
 
 	void *clientContext = dr_get_current_drcontext();
 	
@@ -802,16 +789,16 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 #ifdef DEBUG_LOGGING
 	char filebuf[MAX_PATH];
 	dr_get_current_directory(filebuf, MAX_PATH);
-	std::string threadDbgFile = filebuf+std::string("\\")+"processlog"+std::to_string(traceClientptr->pid)+".txt";
+	std::string threadDbgFile = filebuf+std::string("\\")+"debuglogs\\processlog"+std::to_string(traceClientptr->pid)+".txt";
 	dbgfile = dr_open_file(threadDbgFile.c_str(), DR_FILE_WRITE_OVERWRITE);
 
-	dr_printf("[drgat]This is the debug drgat dll! Writing logs to %s with a *significant* performance impact\n",filebuf);
+	dr_printf("[drgat]This is the debug drgat dll! Writing logs to %s with a *significant* performance impact\n", filebuf);
 #endif
 	dr_printf("[drgat]Starting instrumentation of %s (PID:%d)\n",appPath.c_str(),traceClientptr->pid);
 
 	std::string pipeName = "\\\\.\\pipe\\BootstrapPipe";
 	traceClientptr->modpipe = dr_open_file("\\\\.\\pipe\\BootstrapPipe", DR_FILE_WRITE_OVERWRITE);
-	int failLimit = 3;
+	int failLimit = 30;
 	while (traceClientptr->modpipe == INVALID_FILE)
 	{
 		if(!--failLimit)
@@ -821,16 +808,17 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 				dr_abort();
 				return;
 			}
-		dr_sleep(600);
+		dr_sleep(1000);
 		traceClientptr->modpipe = dr_open_file(pipeName.c_str(), DR_FILE_WRITE_OVERWRITE);
 	}
 
 
+	uint processRandID = dr_get_random_value(INT_MAX  >> 4);
 	//notify rgat to create threads for this process
 	#ifdef X86_64
-	dr_fprintf(traceClientptr->modpipe, "PID6%d", traceClientptr->pid);
+	dr_fprintf(traceClientptr->modpipe, "PID6%dr%dp%s", traceClientptr->pid,processRandID, mainmodule->full_path);
 	#else
-	dr_fprintf(traceClientptr->modpipe, "PID3%d", traceClientptr->pid);
+	dr_fprintf(traceClientptr->modpipe, "PID3%dr%dp%s", traceClientptr->pid, processRandID, mainmodule->full_path);
 	#endif
 	dr_sleep(600);
 
@@ -839,6 +827,7 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 	traceClientptr->modpipe = INVALID_FILE;
 	pipeName = "\\\\.\\pipe\\rioThreadMod";
 	pipeName.append(std::to_string(traceClientptr->pid));
+	pipeName.append(std::to_string(processRandID));
 
 	traceClientptr->modpipe = dr_open_file(pipeName.c_str(), DR_FILE_WRITE_OVERWRITE);
 	failLimit = 3;
@@ -859,6 +848,7 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 	dr_sleep(500);
 	pipeName = "\\\\.\\pipe\\rioThreadBB";
 	pipeName.append(std::to_string(traceClientptr->pid));
+	pipeName.append(std::to_string(processRandID));
 	traceClientptr->bbpipe = dr_open_file(pipeName.c_str(), DR_FILE_WRITE_OVERWRITE);
 	DR_ASSERT_MSG(traceClientptr->bbpipe != INVALID_FILE, "No rioThreadBB pipe!");
 
@@ -988,12 +978,13 @@ static void event_thread_init(void *threadcontext)
 #ifdef DEBUG_LOGGING
 	char filebuf[MAX_PATH];
 	dr_get_current_directory(filebuf, MAX_PATH);
-	std::string threadDbgFile = filebuf+std::string("\\")+"\\threadlog"+std::to_string(traceClientptr->pid)+"-"
+	std::string threadDbgFile = filebuf+std::string("\\")+"debuglogs\\threadlog"+std::to_string(traceClientptr->pid)+"-"
 		+std::to_string(tid)+".txt";
 
 	dr_printf("[drgat] New thread debug logging to %s\n", threadDbgFile.c_str());
 	thread->dbgfile = dr_open_file(threadDbgFile.c_str(), DR_FILE_WRITE_OVERWRITE);
 #endif
+
 	drmgr_set_tls_field(threadcontext, traceClientptr->tls_idx, (THREAD_STATE *)thread);
 	dr_flush_file(thread->f);
 }
@@ -1028,10 +1019,11 @@ this: determines whether a block should be instrumented
 dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 	instrlist_t *bb,	bool for_trace, bool translating,	void **user_data)
 {
+
+	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(drcontext, traceClientptr->tls_idx);
 	thread_id_t tid = dr_get_thread_id(drcontext);
 	uint threadMod = threadModArr[tid];
-	THREAD_STATE *thread = (THREAD_STATE *)drmgr_get_tls_field(drcontext, traceClientptr->tls_idx);
-	
+
 	char *BBBuf = thread->BBBuf;
 
 	instr_t *firstIns = instrlist_first_app(bb);
@@ -1238,7 +1230,7 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 		#ifdef DEBUG_LOGGING
 		dr_fprintf(dbgfile,"\t\tinserted cbr instrumentation\n");
 		#endif
-		dr_insert_cbr_instrumentation_ex(drcontext, bb, lasti, instrumentationTable[traceType][AT_CBR], OPND_CREATE_INTPTR(block_data));
+		dr_insert_cbr_instrumentation_ex(drcontext, bb, lasti, (app_pc)at_cbr, OPND_CREATE_INTPTR(block_data));
 	}
 	else 
 	{
@@ -1255,7 +1247,7 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 			#ifdef DEBUG_LOGGING
 			dr_fprintf(dbgfile,"\t\tinserted ubr instrumentation\n");
 			#endif
-			dr_insert_ubr_instrumentation(drcontext, bb, lasti, instrumentationTable[traceType][AT_UBR]);
+			dr_insert_ubr_instrumentation(drcontext, bb, lasti, (app_pc)at_ubr);
 		}
 		//order is important here as far calls are hit by this and instr_is_call
 		else if(instr_is_mbr(lasti))
@@ -1263,7 +1255,7 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 			#ifdef DEBUG_LOGGING
 			dr_fprintf(dbgfile,"\t\tinserted mbr instrumentation\n");
 			#endif
-			dr_insert_mbr_instrumentation(drcontext, bb, lasti, instrumentationTable[traceType][AT_MBR],SPILL_SLOT_1);
+			dr_insert_mbr_instrumentation(drcontext, bb, lasti, (app_pc)at_mbr, SPILL_SLOT_1);
 		}
                         
 		else if (instr_is_call(lasti))
@@ -1271,7 +1263,7 @@ dr_emit_flags_t event_bb_analysis(void *drcontext, void *tag,
 			#ifdef DEBUG_LOGGING
 			dr_fprintf(dbgfile,"\t\tinserted call instrumentation\n");
 			#endif
-			dr_insert_call_instrumentation(drcontext, bb, lasti, instrumentationTable[traceType][AT_CALL]);
+			dr_insert_call_instrumentation(drcontext, bb, lasti, (app_pc)at_call);
 		}
 
 		else

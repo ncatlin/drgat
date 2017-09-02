@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="debugDBGLOG|Win32">
       <Configuration>debugDBGLOG</Configuration>
@@ -43,52 +43,52 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v110</PlatformToolset>
+    <PlatformToolset>v120</PlatformToolset>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debugDBGLOG|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v110</PlatformToolset>
+    <PlatformToolset>v120</PlatformToolset>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v110</PlatformToolset>
+    <PlatformToolset>v120</PlatformToolset>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debugDBGLOG|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v110</PlatformToolset>
+    <PlatformToolset>v120</PlatformToolset>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v110</PlatformToolset>
+    <PlatformToolset>v120</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDBGLOG|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v110</PlatformToolset>
+    <PlatformToolset>v120</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v110</PlatformToolset>
+    <PlatformToolset>v120</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDBGLOG|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v110</PlatformToolset>
+    <PlatformToolset>v120</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
@@ -121,40 +121,41 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <IncludePath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\include;C:\Users\nia\Documents\DynamoRIO-Windows-6.1.0-2\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\lib32\debug;C:\Users\nia\Documents\DynamoRIO-Windows-6.1.0-2\lib32\debug;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\ext\include;C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\ext\lib32\debug;C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\lib32\debug;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debugDBGLOG|Win32'">
-    <IncludePath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\include;C:\Users\nia\Documents\DynamoRIO-Windows-6.1.0-2\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\lib32\debug;C:\Users\nia\Documents\DynamoRIO-Windows-6.1.0-2\lib32\debug;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\ext\include;C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\ext\lib32\debug;C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\lib32\debug;$(LibraryPath)</LibraryPath>
+    <TargetName>drgat-debug</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\include;C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\lib64\debug;C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\lib64\debug;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\ext\include;C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\ext\lib64\debug;C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\lib64\debug;$(LibraryPath)</LibraryPath>
     <TargetName>drgat64</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='debugDBGLOG|x64'">
-    <IncludePath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\include;C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\lib64\debug;C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\lib64\debug;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\ext\include;C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\ext\lib64\debug;C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\lib64\debug;$(LibraryPath)</LibraryPath>
     <TargetName>drgat64</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <IncludePath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\include;C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\lib32\release;C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\lib32\release;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\ext\include;C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\ext\lib32\release;C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\lib32\release;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDBGLOG|Win32'">
-    <IncludePath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\include;C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\lib32\release;C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\lib32\release;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\ext\include;C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\ext\lib32\release;C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\lib32\release;$(LibraryPath)</LibraryPath>
     <TargetName>drgat-debug</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\include;C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\lib64\release;C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\lib64\release;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\ext\include;C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\ext\lib64\release;C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\lib64\release;$(LibraryPath)</LibraryPath>
     <TargetName>drgat64</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDBGLOG|x64'">
-    <IncludePath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\include;C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\include;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\ext\lib64\release;C:\Users\nia\Documents\DynamoRIO-Windows-6.2.0-2\lib64\release;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\ext\include;C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\include;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\ext\lib64\release;C:\devel\libs\dynamorio\DynamoRIO-Windows-7.0.0-RC1\lib64\release;$(LibraryPath)</LibraryPath>
     <TargetName>drgat64-debug</TargetName>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
